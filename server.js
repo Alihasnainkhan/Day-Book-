@@ -1,0 +1,329 @@
+const express = require('express');
+const mysql = require('mysql2/promise');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static(__dirname)); // Serve frontend files globally
+
+// Database Connection Setup
+let pool = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'khantraders_jauwana',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
+
+async function initDB() {
+    try {
+        // First ensure DB exists using a fresh connection w/o database selected
+        const initialConnection = await mysql.createConnection({
+            host: process.env.DB_HOST || 'localhost',
+            user: process.env.DB_USER || 'root',
+            password: process.env.DB_PASSWORD || '',
+        });
+        const dbName = process.env.DB_NAME || 'khantraders_jauwana';
+        await initialConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`);
+        await initialConnection.end();
+
+        console.log(`Connected to MySQL database: ${dbName}`);
+
+        // Create transactions table if it doesn't exist
+        const createTransactionsQuery = `
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                details VARCHAR(255) NOT NULL,
+                category VARCHAR(100) NOT NULL,
+                type ENUM('incoming', 'outgoing') NOT NULL,
+                amount DECIMAL(15, 2) NOT NULL,
+                date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        await pool.query(createTransactionsQuery);
+        console.log("Transactions table ready.");
+
+        // Create inventory table if it doesn't exist
+        const createInventoryQuery = `
+            CREATE TABLE IF NOT EXISTS inventory (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                product_name VARCHAR(255) NOT NULL,
+                category VARCHAR(100) NOT NULL,
+                stock_in INT DEFAULT 0,
+                stock_out INT DEFAULT 0,
+                date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        await pool.query(createInventoryQuery);
+        console.log("Inventory table ready.");
+
+        // Create khata table if it doesn't exist
+        const createKhataQuery = `
+            CREATE TABLE IF NOT EXISTS khata (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                client_name VARCHAR(255) NOT NULL,
+                notes TEXT,
+                debit DECIMAL(15, 2) DEFAULT 0.00,
+                credit DECIMAL(15, 2) DEFAULT 0.00,
+                date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        await pool.query(createKhataQuery);
+        console.log("Khata table ready.");
+    } catch (error) {
+        console.error("Database connection error:", error);
+    }
+}
+
+// Export the Express API for Vercel
+module.exports = app;
+
+if (require.main === module) {
+    // Only run the listen command if executed locally
+    initDB().then(() => {
+        const PORT = process.env.PORT || 5000;
+        app.listen(PORT, () => {
+            console.log(`Server running locally on port ${PORT}`);
+        });
+    });
+}
+// API Routes
+
+// Get all transactions
+app.get('/api/transactions', async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT * FROM transactions ORDER BY date DESC, created_at DESC');
+        res.json(rows);
+    } catch (error) {
+        console.error("Error fetching transactions:", error);
+        res.status(500).json({ error: 'Failed to fetch transactions' });
+    }
+});
+
+// Add a new transaction
+app.post('/api/transactions', async (req, res) => {
+    try {
+        const { date, details, type, amount, category } = req.body;
+
+        // Basic validation
+        if (!date || !details || !type || amount === undefined || !category) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+
+        const query = `
+            INSERT INTO transactions (date, details, type, amount, category) 
+            VALUES (?, ?, ?, ?, ?)
+        `;
+        const [result] = await pool.query(query, [date, details, type, amount, category]);
+
+        res.status(201).json({
+            message: 'Transaction added successfully',
+            id: result.insertId
+        });
+    } catch (error) {
+        console.error("Error adding transaction:", error);
+        res.status(500).json({ error: 'Failed to add transaction' });
+    }
+});
+
+// Update an existing transaction
+app.put('/api/transactions/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { date, details, type, amount, category } = req.body;
+
+        if (!date || !details || !type || amount === undefined || !category) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+
+        const query = `
+            UPDATE transactions 
+            SET date=?, details=?, type=?, amount=?, category=? 
+            WHERE id=?
+        `;
+        const [result] = await pool.query(query, [date, details, type, amount, category, id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Transaction not found' });
+        }
+
+        res.json({ message: 'Transaction updated successfully' });
+    } catch (error) {
+        console.error("Error updating transaction:", error);
+        res.status(500).json({ error: 'Failed to update transaction' });
+    }
+});
+
+// Delete a transaction
+app.delete('/api/transactions/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const query = 'DELETE FROM transactions WHERE id=?';
+
+        const [result] = await pool.query(query, [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Transaction not found' });
+        }
+
+        res.json({ message: 'Transaction deleted successfully' });
+    } catch (error) {
+        console.error("Error deleting transaction:", error);
+        res.status(500).json({ error: 'Failed to delete transaction' });
+    }
+});
+
+// ================= INVENTORY API =================
+app.get('/api/inventory', async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT * FROM inventory ORDER BY date DESC, created_at DESC');
+        res.json(rows);
+    } catch (error) {
+        console.error("Error fetching inventory:", error);
+        res.status(500).json({ error: 'Failed to fetch inventory' });
+    }
+});
+
+app.post('/api/inventory', async (req, res) => {
+    try {
+        const { date, product_name, category, stock_in, stock_out } = req.body;
+
+        if (!date || !product_name || !category) {
+            return res.status(400).json({ error: 'Date, Product Name, and Category are required' });
+        }
+
+        const query = `
+            INSERT INTO inventory (date, product_name, category, stock_in, stock_out) 
+            VALUES (?, ?, ?, ?, ?)
+        `;
+        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0]);
+        res.status(201).json({ message: 'Inventory added', id: result.insertId });
+    } catch (error) {
+        console.error("Error adding inventory:", error);
+        res.status(500).json({ error: 'Failed to add inventory' });
+    }
+});
+
+app.put('/api/inventory/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { date, product_name, category, stock_in, stock_out } = req.body;
+
+        if (!date || !product_name || !category) {
+            return res.status(400).json({ error: 'Date, Product Name, and Category are required' });
+        }
+
+        const query = `
+            UPDATE inventory 
+            SET date=?, product_name=?, category=?, stock_in=?, stock_out=? 
+            WHERE id=?
+        `;
+        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0, id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Inventory item not found' });
+        }
+        res.json({ message: 'Inventory updated successfully' });
+    } catch (error) {
+        console.error("Error updating inventory:", error);
+        res.status(500).json({ error: 'Failed to update inventory' });
+    }
+});
+
+app.delete('/api/inventory/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const query = 'DELETE FROM inventory WHERE id=?';
+        const [result] = await pool.query(query, [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Inventory item not found' });
+        }
+        res.json({ message: 'Inventory item deleted successfully' });
+    } catch (error) {
+        console.error("Error deleting inventory:", error);
+        res.status(500).json({ error: 'Failed to delete inventory' });
+    }
+});
+
+// ================= KHATA API =================
+app.get('/api/khata', async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT * FROM khata ORDER BY date DESC, created_at DESC');
+        res.json(rows);
+    } catch (error) {
+        console.error("Error fetching khata:", error);
+        res.status(500).json({ error: 'Failed to fetch khata' });
+    }
+});
+
+app.post('/api/khata', async (req, res) => {
+    try {
+        const { date, client_name, notes, debit, credit } = req.body;
+
+        if (!date || !client_name) {
+            return res.status(400).json({ error: 'Date and Client Name are required' });
+        }
+
+        const query = `
+            INSERT INTO khata (date, client_name, notes, debit, credit) 
+            VALUES (?, ?, ?, ?, ?)
+        `;
+        const [result] = await pool.query(query, [date, client_name, notes || '', debit || 0, credit || 0]);
+        res.status(201).json({ message: 'Khata added', id: result.insertId });
+    } catch (error) {
+        console.error("Error adding khata:", error);
+        res.status(500).json({ error: 'Failed to add khata' });
+    }
+});
+
+app.put('/api/khata/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { date, client_name, notes, debit, credit } = req.body;
+
+        if (!date || !client_name) {
+            return res.status(400).json({ error: 'Date and Client Name are required' });
+        }
+
+        const query = `
+            UPDATE khata 
+            SET date=?, client_name=?, notes=?, debit=?, credit=? 
+            WHERE id=?
+        `;
+        const [result] = await pool.query(query, [date, client_name, notes || '', debit || 0, credit || 0, id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Khata entry not found' });
+        }
+        res.json({ message: 'Khata updated successfully' });
+    } catch (error) {
+        console.error("Error updating khata:", error);
+        res.status(500).json({ error: 'Failed to update khata' });
+    }
+});
+
+app.delete('/api/khata/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const query = 'DELETE FROM khata WHERE id=?';
+        const [result] = await pool.query(query, [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Khata entry not found' });
+        }
+        res.json({ message: 'Khata entry deleted successfully' });
+    } catch (error) {
+        console.error("Error deleting khata:", error);
+        res.status(500).json({ error: 'Failed to delete khata' });
+    }
+});
