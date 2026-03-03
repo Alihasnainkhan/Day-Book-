@@ -11,11 +11,14 @@ app.use(express.json());
 app.use(express.static(__dirname)); // Serve frontend files globally
 
 // Database Connection Setup
+// Database Connection Setup
 let pool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'khantraders_jauwana',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT || 10784,
+    ssl: { rejectUnauthorized: true },
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -25,11 +28,13 @@ async function initDB() {
     try {
         // First ensure DB exists using a fresh connection w/o database selected
         const initialConnection = await mysql.createConnection({
-            host: process.env.DB_HOST || 'localhost',
-            user: process.env.DB_USER || 'root',
-            password: process.env.DB_PASSWORD || '',
+            host: process.env.DB_HOST,
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            port: process.env.DB_PORT || 10784,
+            ssl: { rejectUnauthorized: true }
         });
-        const dbName = process.env.DB_NAME || 'khantraders_jauwana';
+        const dbName = process.env.DB_NAME || 'defaultdb';
         await initialConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`);
         await initialConnection.end();
 
@@ -105,7 +110,7 @@ app.get('/api/transactions', async (req, res) => {
         res.json(rows);
     } catch (error) {
         console.error("Error fetching transactions:", error);
-        res.status(500).json({ error: 'Failed to fetch transactions' });
+        res.status(500).json({ error: 'Failed to fetch transactions', details: error.message });
     }
 });
 
@@ -131,7 +136,7 @@ app.post('/api/transactions', async (req, res) => {
         });
     } catch (error) {
         console.error("Error adding transaction:", error);
-        res.status(500).json({ error: 'Failed to add transaction' });
+        res.status(500).json({ error: 'Failed to add transaction', details: error.message });
     }
 });
 
@@ -159,7 +164,7 @@ app.put('/api/transactions/:id', async (req, res) => {
         res.json({ message: 'Transaction updated successfully' });
     } catch (error) {
         console.error("Error updating transaction:", error);
-        res.status(500).json({ error: 'Failed to update transaction' });
+        res.status(500).json({ error: 'Failed to update transaction', details: error.message });
     }
 });
 
@@ -178,7 +183,7 @@ app.delete('/api/transactions/:id', async (req, res) => {
         res.json({ message: 'Transaction deleted successfully' });
     } catch (error) {
         console.error("Error deleting transaction:", error);
-        res.status(500).json({ error: 'Failed to delete transaction' });
+        res.status(500).json({ error: 'Failed to delete transaction', details: error.message });
     }
 });
 
@@ -189,7 +194,7 @@ app.get('/api/inventory', async (req, res) => {
         res.json(rows);
     } catch (error) {
         console.error("Error fetching inventory:", error);
-        res.status(500).json({ error: 'Failed to fetch inventory' });
+        res.status(500).json({ error: 'Failed to fetch inventory', details: error.message });
     }
 });
 
@@ -209,7 +214,7 @@ app.post('/api/inventory', async (req, res) => {
         res.status(201).json({ message: 'Inventory added', id: result.insertId });
     } catch (error) {
         console.error("Error adding inventory:", error);
-        res.status(500).json({ error: 'Failed to add inventory' });
+        res.status(500).json({ error: 'Failed to add inventory', details: error.message });
     }
 });
 
@@ -235,7 +240,7 @@ app.put('/api/inventory/:id', async (req, res) => {
         res.json({ message: 'Inventory updated successfully' });
     } catch (error) {
         console.error("Error updating inventory:", error);
-        res.status(500).json({ error: 'Failed to update inventory' });
+        res.status(500).json({ error: 'Failed to update inventory', details: error.message });
     }
 });
 
@@ -251,7 +256,7 @@ app.delete('/api/inventory/:id', async (req, res) => {
         res.json({ message: 'Inventory item deleted successfully' });
     } catch (error) {
         console.error("Error deleting inventory:", error);
-        res.status(500).json({ error: 'Failed to delete inventory' });
+        res.status(500).json({ error: 'Failed to delete inventory', details: error.message });
     }
 });
 
@@ -262,7 +267,7 @@ app.get('/api/khata', async (req, res) => {
         res.json(rows);
     } catch (error) {
         console.error("Error fetching khata:", error);
-        res.status(500).json({ error: 'Failed to fetch khata' });
+        res.status(500).json({ error: 'Failed to fetch khata', details: error.message });
     }
 });
 
@@ -282,7 +287,7 @@ app.post('/api/khata', async (req, res) => {
         res.status(201).json({ message: 'Khata added', id: result.insertId });
     } catch (error) {
         console.error("Error adding khata:", error);
-        res.status(500).json({ error: 'Failed to add khata' });
+        res.status(500).json({ error: 'Failed to add khata', details: error.message });
     }
 });
 
@@ -308,7 +313,7 @@ app.put('/api/khata/:id', async (req, res) => {
         res.json({ message: 'Khata updated successfully' });
     } catch (error) {
         console.error("Error updating khata:", error);
-        res.status(500).json({ error: 'Failed to update khata' });
+        res.status(500).json({ error: 'Failed to update khata', details: error.message });
     }
 });
 
@@ -324,6 +329,6 @@ app.delete('/api/khata/:id', async (req, res) => {
         res.json({ message: 'Khata entry deleted successfully' });
     } catch (error) {
         console.error("Error deleting khata:", error);
-        res.status(500).json({ error: 'Failed to delete khata' });
+        res.status(500).json({ error: 'Failed to delete khata', details: error.message });
     }
 });

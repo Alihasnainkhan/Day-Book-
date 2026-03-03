@@ -411,9 +411,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ---- API Logic & Fetch ----
-    const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    const origin = window.location.origin;
+    const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         ? 'http://localhost:5000/api'
-        : '/api';
+        : `${origin}/api`;
 
     let transactions = [];
 
