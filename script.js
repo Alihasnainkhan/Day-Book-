@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
             lbl_client: 'Client / Party Name',
             lbl_amt: 'Amount (₨)',
             lbl_balance: 'Net Stock',
+            lbl_unit: 'Unit',
+            lbl_price: 'Price per Unit',
             lbl_notes: 'Notes (Optional)',
             lbl_details: 'Details',
             lbl_cat: 'Category',
@@ -58,7 +60,11 @@ document.addEventListener('DOMContentLoaded', () => {
             tab_rice: 'Rice',
             tab_till: 'Till',
             tab_sarsu: 'Sarsu',
-            tab_others: 'Others'
+            tab_others: 'Others',
+            opt_kg: 'kg',
+            opt_mn: 'mn (40kg)',
+            col_unit: 'Unit',
+            col_price: 'Price'
         },
         'ur': {
             nav_daybook: 'روزنامچہ',
@@ -91,6 +97,8 @@ document.addEventListener('DOMContentLoaded', () => {
             lbl_client: 'پارٹی کا نام',
             lbl_amt: 'رقم (₨)',
             lbl_balance: 'کل سٹاک',
+            lbl_unit: 'اکائی',
+            lbl_price: 'فی اکائی قیمت',
             lbl_notes: 'تفصیل (اختیاری)',
             lbl_details: 'تفصیل',
             lbl_cat: 'زمرہ',
@@ -117,7 +125,11 @@ document.addEventListener('DOMContentLoaded', () => {
             tab_rice: 'چاول',
             tab_till: 'تل',
             tab_sarsu: 'سرجوں',
-            tab_others: 'دوسرے'
+            tab_others: 'دوسرے',
+            opt_kg: 'کلو',
+            opt_mn: 'من',
+            col_unit: 'اکائی',
+            col_price: 'قیمت'
         }
     };
 
@@ -360,6 +372,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <th data-i18n="col_category">${getStr('col_category')}</th>
                     <th class="amount-col" data-i18n="col_stock_in">${getStr('col_stock_in')}</th>
                     <th class="amount-col" data-i18n="col_stock_out">${getStr('col_stock_out')}</th>
+                    <th data-i18n="col_unit">${getStr('col_unit')}</th>
+                    <th class="amount-col" data-i18n="col_price">${getStr('col_price')}</th>
                     <th class="amount-col" data-i18n="col_balance">${getStr('col_balance')}</th>
                     <th data-i18n="col_date">${getStr('col_date')}</th>
                     <th data-i18n="col_actions">${getStr('col_actions')}</th>
@@ -440,6 +454,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="form-group">
                     <label>${getStr('lbl_qty')}</label>
                     <input type="number" placeholder="0" required>
+                </div>
+                <div class="form-group">
+                    <label>${getStr('lbl_unit')}</label>
+                    <select required>
+                        <option value="kg">${getStr('opt_kg')}</option>
+                        <option value="mn">${getStr('opt_mn')}</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>${getStr('lbl_price')}</label>
+                    <input type="number" step="0.01" placeholder="0.00">
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary close-modal">${getStr('btn_cancel')}</button>
@@ -623,7 +648,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     product_name: inputs[1].value,
                     category: currentInventoryCategory,
                     stock_in: type === 'in' ? qty : 0,
-                    stock_out: type === 'out' ? qty : 0
+                    stock_out: type === 'out' ? qty : 0,
+                    unit: inputs[4].value,
+                    price: Number(inputs[5].value || 0)
                 };
             } else if (currentPage === 'khata') {
                 endpoint = `${API_BASE}/khata`;
@@ -733,6 +760,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const isStockIn = Number(row.stock_in) > 0;
             inputs[2].value = isStockIn ? 'in' : 'out';
             inputs[3].value = isStockIn ? row.stock_in : row.stock_out;
+            inputs[4].value = row.unit || 'kg';
+            inputs[5].value = row.price || 0;
         } else if (currentPage === 'khata') {
             inputs[0].value = dStr;
             inputs[1].value = row.client_name;
@@ -756,7 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         if (transactions.length === 0) {
-            const colCount = (currentPage === 'inventory') ? 7 : 6;
+            const colCount = (currentPage === 'inventory') ? 9 : 6;
             tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align: center; color: var(--text-muted);">${getStr('no_data')}</td></tr>`;
             return;
         }
@@ -776,6 +805,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentPage === 'inventory') {
                 const stockIn = Number(row.stock_in || 0);
                 const stockOut = Number(row.stock_out || 0);
+                const unitDisplay = row.unit === 'mn' ? getStr('opt_mn') : getStr('opt_kg');
+                const priceDisplay = Number(row.price || 0).toLocaleString('en-PK', { minimumFractionDigits: 2 });
                 const typeDisplay = stockIn > 0 ? getStr('cat_in') : getStr('cat_out');
                 const badgeClass = stockIn > 0 ? 'badge badge-success' : 'badge badge-warning';
 
@@ -788,6 +819,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td><span class="${badgeClass}">${typeDisplay}</span></td>
                     <td class="amount-col text-success">${stockIn.toLocaleString('en-PK')}</td>
                     <td class="amount-col text-danger">${stockOut.toLocaleString('en-PK')}</td>
+                    <td>${unitDisplay}</td>
+                    <td class="amount-col">₨ ${priceDisplay}</td>
                     <td class="amount-col" style="font-weight: bold; color: var(--primary);">${currentBalance.toLocaleString('en-PK')}</td>
                     <td>${displayDate}</td>
                     <td>

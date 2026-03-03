@@ -84,6 +84,8 @@ async function initDB() {
                 category VARCHAR(100) NOT NULL,
                 stock_in INT DEFAULT 0,
                 stock_out INT DEFAULT 0,
+                unit VARCHAR(20) DEFAULT 'kg',
+                price DECIMAL(15, 2) DEFAULT 0.00,
                 date DATE NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -277,17 +279,17 @@ app.get('/api/inventory', verifyToken, async (req, res) => {
 
 app.post('/api/inventory', verifyToken, async (req, res) => {
     try {
-        const { date, product_name, category, stock_in, stock_out } = req.body;
+        const { date, product_name, category, stock_in, stock_out, unit, price } = req.body;
 
         if (!date || !product_name || !category) {
             return res.status(400).json({ error: 'Date, Product Name, and Category are required' });
         }
 
         const query = `
-            INSERT INTO inventory (date, product_name, category, stock_in, stock_out) 
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO inventory (date, product_name, category, stock_in, stock_out, unit, price) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
-        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0]);
+        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0, unit || 'kg', price || 0]);
         res.status(201).json({ message: 'Inventory added', id: result.insertId });
     } catch (error) {
         console.error("Error adding inventory:", error);
@@ -298,7 +300,7 @@ app.post('/api/inventory', verifyToken, async (req, res) => {
 app.put('/api/inventory/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const { date, product_name, category, stock_in, stock_out } = req.body;
+        const { date, product_name, category, stock_in, stock_out, unit, price } = req.body;
 
         if (!date || !product_name || !category) {
             return res.status(400).json({ error: 'Date, Product Name, and Category are required' });
@@ -306,10 +308,10 @@ app.put('/api/inventory/:id', verifyToken, async (req, res) => {
 
         const query = `
             UPDATE inventory 
-            SET date=?, product_name=?, category=?, stock_in=?, stock_out=? 
+            SET date=?, product_name=?, category=?, stock_in=?, stock_out=?, unit=?, price=? 
             WHERE id=?
         `;
-        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0, id]);
+        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0, unit || 'kg', price || 0, id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Inventory item not found' });
