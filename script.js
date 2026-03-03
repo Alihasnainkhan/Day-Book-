@@ -34,6 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
             lbl_balance: 'Net Stock',
             lbl_unit: 'Unit',
             lbl_price: 'Price per Unit',
+            lbl_total_purch: 'Total Purchase Value',
+            lbl_total_sale: 'Total Sale Value',
+            lbl_profit: 'Net Profit (Nafa)',
             lbl_notes: 'Notes (Optional)',
             lbl_details: 'Details',
             lbl_cat: 'Category',
@@ -100,6 +103,9 @@ document.addEventListener('DOMContentLoaded', () => {
             lbl_balance: 'کل سٹاک',
             lbl_unit: 'اکائی',
             lbl_price: 'فی اکائی قیمت',
+            lbl_total_purch: 'کل قیمت خرید',
+            lbl_total_sale: 'کل قیمت فروخت',
+            lbl_profit: 'خالص منافع (نفع)',
             lbl_notes: 'تفصیل (اختیاری)',
             lbl_details: 'تفصیل',
             lbl_cat: 'زمرہ',
@@ -345,6 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pageTitleText = document.getElementById('page-name');
     const pageTitleIcon = document.getElementById('page-icon');
     const inventoryTabs = document.getElementById('inventory-tabs');
+    const inventorySummary = document.getElementById('inventory-summary');
 
     function switchPage(navId) {
         if (!navItems[navId]) return;
@@ -364,6 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dashboardStats) dashboardStats.style.display = config.showStats ? 'grid' : 'none';
         if (dateFilters) dateFilters.style.visibility = config.showFilters ? 'visible' : 'hidden';
         if (inventoryTabs) inventoryTabs.style.display = currentPage === 'inventory' ? 'flex' : 'none';
+        if (inventorySummary) inventorySummary.style.display = currentPage === 'inventory' ? 'grid' : 'none';
 
         // Update Table Headers
         const thead = document.querySelector('.data-table thead tr');
@@ -804,12 +812,50 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Pre-calculate current total for inventory running balance
+        // Pre-calculate current total for inventory running balance and financial summary
         let balanceTracker = 0;
+        let totalPurchases = 0;
+        let totalSales = 0;
+
         if (currentPage === 'inventory') {
             transactions.forEach(t => {
-                balanceTracker += (Number(t.stock_in || 0) - Number(t.stock_out || 0));
+                const stockIn = Number(t.stock_in || 0);
+                const stockOut = Number(t.stock_out || 0);
+                const price = Number(t.price || 0);
+                const unit = t.unit || 'kg';
+
+                // Calculate stock balance
+                balanceTracker += (stockIn - stockOut);
+
+                // Calculate financial totals
+                const qtyOriginal = (unit === 'mn') ? (Math.max(stockIn, stockOut) / 40) : Math.max(stockIn, stockOut);
+                const itemTotal = qtyOriginal * price;
+
+                if (stockIn > 0) totalPurchases += itemTotal;
+                else if (stockOut > 0) totalSales += itemTotal;
             });
+
+            // Update Financial Summary UI
+            if (inventorySummary) {
+                const profit = totalSales - totalPurchases;
+                inventorySummary.innerHTML = `
+                    <div class="summary-card purchase">
+                        <span class="label">${getStr('lbl_total_purch')}</span>
+                        <span class="value">₨ ${totalPurchases.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                        <div class="trend"><i class="fa-solid fa-cart-shopping"></i></div>
+                    </div>
+                    <div class="summary-card sale">
+                        <span class="label">${getStr('lbl_total_sale')}</span>
+                        <span class="value">₨ ${totalSales.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                        <div class="trend"><i class="fa-solid fa-cash-register"></i></div>
+                    </div>
+                    <div class="summary-card profit">
+                        <span class="label">${getStr('lbl_profit')}</span>
+                        <span class="value">₨ ${profit.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                        <div class="trend"><i class="fa-solid fa-chart-line"></i> ${profit >= 0 ? '+' : ''}${profit.toLocaleString('en-PK')}</div>
+                    </div>
+                `;
+            }
         }
 
         transactions.forEach(row => {
