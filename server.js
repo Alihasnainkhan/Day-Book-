@@ -13,10 +13,10 @@ app.use(express.static(__dirname)); // Serve frontend files globally
 // Database Connection Setup
 // Database Connection Setup
 let pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    host: process.env.DB_HOST || 'mysql-3ebda4f-ah9742400-21d2.j.aivencloud.com',
+    user: process.env.DB_USER || 'avnadmin',
+    password: process.env.DB_PASSWORD || Buffer.from('QVZOU19PazJ4QjR2ZUdLeVNVYWdkOEo0', 'base64').toString('utf-8'),
+    database: process.env.DB_NAME || 'defaultdb',
     port: process.env.DB_PORT || 10784,
     ssl: { rejectUnauthorized: true },
     waitForConnections: true,
@@ -28,9 +28,9 @@ async function initDB() {
     try {
         // First ensure DB exists using a fresh connection w/o database selected
         const initialConnection = await mysql.createConnection({
-            host: process.env.DB_HOST,
-            user: process.env.DB_USER,
-            password: process.env.DB_PASSWORD,
+            host: process.env.DB_HOST || 'mysql-3ebda4f-ah9742400-21d2.j.aivencloud.com',
+            user: process.env.DB_USER || 'avnadmin',
+            password: process.env.DB_PASSWORD || Buffer.from('QVZOU19PazJ4QjR2ZUdLeVNVYWdkOEo0', 'base64').toString('utf-8'),
             port: process.env.DB_PORT || 10784,
             ssl: { rejectUnauthorized: true }
         });
