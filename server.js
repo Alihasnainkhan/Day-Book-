@@ -18,7 +18,7 @@ let pool = mysql.createPool({
     password: process.env.DB_PASSWORD || Buffer.from('QVZOU19PazJ4QjR2ZUdLeVNVYWdkOEo0', 'base64').toString('utf-8'),
     database: process.env.DB_NAME || 'defaultdb',
     port: process.env.DB_PORT || 10784,
-    ssl: { rejectUnauthorized: true },
+    ssl: { rejectUnauthorized: false },
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -32,7 +32,7 @@ async function initDB() {
             user: process.env.DB_USER || 'avnadmin',
             password: process.env.DB_PASSWORD || Buffer.from('QVZOU19PazJ4QjR2ZUdLeVNVYWdkOEo0', 'base64').toString('utf-8'),
             port: process.env.DB_PORT || 10784,
-            ssl: { rejectUnauthorized: true }
+            ssl: { rejectUnauthorized: false }
         });
         const dbName = process.env.DB_NAME || 'defaultdb';
         await initialConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`);
