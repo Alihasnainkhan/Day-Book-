@@ -27,6 +27,37 @@
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ======== TABS STYLES ======== */
+.tabs-container {
+    padding: 10px 32px;
+    display: flex;
+    gap: 12px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+    padding: 8px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-main);
+    color: var(--text-muted);
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.tab-btn:hover {
+    border-color: var(--primary-light);
+    color: var(--primary);
+}
+
+.tab-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -38,6 +69,57 @@ body {
     background-color: var(--bg-main);
     color: var(--text-main);
     overflow-x: hidden;
+}
+
+/* ======== AUTHENTICATION STYLES ======== */
+.auth-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background-color: var(--bg-main);
+}
+
+.auth-box {
+    background: var(--bg-card);
+    padding: 40px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border);
+    width: 100%;
+    max-width: 400px;
+}
+
+.auth-logo {
+    justify-content: center;
+    margin-bottom: 30px;
+    font-size: 1.5rem;
+}
+
+.auth-box h3 {
+    margin-bottom: 20px;
+    text-align: center;
+    color: var(--text-main);
+}
+
+.auth-switch {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 0.9rem;
+}
+
+.auth-switch a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.auth-error {
+    color: var(--danger);
+    text-align: center;
+    margin-top: 10px;
+    font-size: 0.85rem;
+    min-height: 20px;
 }
 
 /* Layout */

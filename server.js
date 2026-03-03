@@ -1,14 +1,22 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_123';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname)); // Serve frontend files globally
+
+// Explicitly serve index.html for the root route
+app.get('/', (req, res) => {
+    res.sendFile(require('path').join(__dirname, 'index.html'));
+});
 
 // Database Connection Setup
 // Database Connection Setup
@@ -39,6 +47,19 @@ async function initDB() {
         await initialConnection.end();
 
         console.log(`Connected to MySQL database: ${dbName}`);
+
+        // Create users table for authentication
+        const createUsersQuery = `
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL UNIQUE,
+                password VARCHAR(255) NOT NULL,
+                role ENUM('admin', 'user') DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        await pool.query(createUsersQuery);
+        console.log("Users table ready.");
 
         // Create transactions table if it doesn't exist
         const createTransactionsQuery = `
@@ -101,10 +122,66 @@ if (require.main === module) {
         });
     });
 }
-// API Routes
 
-// Get all transactions
-app.get('/api/transactions', async (req, res) => {
+// ================= AUTH API =================
+
+app.post('/api/signup', async (req, res) => {
+    try {
+        const { username, password, role } = req.body;
+        if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+
+        // Check if user exists
+        const [existing] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
+        if (existing.length > 0) return res.status(400).json({ error: 'Username already exists' });
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const userRole = role === 'admin' ? 'admin' : 'user';
+
+        const [result] = await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, userRole]);
+
+        const token = jwt.sign({ id: result.insertId, username, role: userRole }, JWT_SECRET, { expiresIn: '24h' });
+        res.status(201).json({ message: 'User created successfully', token, role: userRole, username });
+    } catch (error) {
+        console.error("Signup error:", error);
+        res.status(500).json({ error: 'Failed to create user', details: error.message });
+    }
+});
+
+app.post('/api/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+
+        const [users] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
+        if (users.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+
+        const user = users[0];
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
+
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+        res.json({ message: 'Login successful', token, role: user.role, username: user.username });
+    } catch (error) {
+        console.error("Login error:", error);
+        res.status(500).json({ error: 'Login failed', details: error.message });
+    }
+});
+
+// Middleware to verify JWT token
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) return res.status(403).json({ error: 'No token provided' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+        if (err) return res.status(401).json({ error: 'Unauthorized!' });
+        req.user = decoded; // Store user details {id, username, role}
+        next();
+    });
+};
+
+// ================= TRANSACTIONS API =================
+app.get('/api/transactions', verifyToken, async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT * FROM transactions ORDER BY date DESC, created_at DESC');
         res.json(rows);
@@ -115,7 +192,7 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 // Add a new transaction
-app.post('/api/transactions', async (req, res) => {
+app.post('/api/transactions', verifyToken, async (req, res) => {
     try {
         const { date, details, type, amount, category } = req.body;
 
@@ -141,7 +218,7 @@ app.post('/api/transactions', async (req, res) => {
 });
 
 // Update an existing transaction
-app.put('/api/transactions/:id', async (req, res) => {
+app.put('/api/transactions/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { date, details, type, amount, category } = req.body;
@@ -169,7 +246,7 @@ app.put('/api/transactions/:id', async (req, res) => {
 });
 
 // Delete a transaction
-app.delete('/api/transactions/:id', async (req, res) => {
+app.delete('/api/transactions/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
         const query = 'DELETE FROM transactions WHERE id=?';
@@ -188,7 +265,7 @@ app.delete('/api/transactions/:id', async (req, res) => {
 });
 
 // ================= INVENTORY API =================
-app.get('/api/inventory', async (req, res) => {
+app.get('/api/inventory', verifyToken, async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT * FROM inventory ORDER BY date DESC, created_at DESC');
         res.json(rows);
@@ -198,7 +275,7 @@ app.get('/api/inventory', async (req, res) => {
     }
 });
 
-app.post('/api/inventory', async (req, res) => {
+app.post('/api/inventory', verifyToken, async (req, res) => {
     try {
         const { date, product_name, category, stock_in, stock_out } = req.body;
 
@@ -218,7 +295,7 @@ app.post('/api/inventory', async (req, res) => {
     }
 });
 
-app.put('/api/inventory/:id', async (req, res) => {
+app.put('/api/inventory/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { date, product_name, category, stock_in, stock_out } = req.body;
@@ -244,7 +321,7 @@ app.put('/api/inventory/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/inventory/:id', async (req, res) => {
+app.delete('/api/inventory/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
         const query = 'DELETE FROM inventory WHERE id=?';
@@ -261,7 +338,7 @@ app.delete('/api/inventory/:id', async (req, res) => {
 });
 
 // ================= KHATA API =================
-app.get('/api/khata', async (req, res) => {
+app.get('/api/khata', verifyToken, async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT * FROM khata ORDER BY date DESC, created_at DESC');
         res.json(rows);
@@ -271,7 +348,7 @@ app.get('/api/khata', async (req, res) => {
     }
 });
 
-app.post('/api/khata', async (req, res) => {
+app.post('/api/khata', verifyToken, async (req, res) => {
     try {
         const { date, client_name, notes, debit, credit } = req.body;
 
@@ -291,7 +368,7 @@ app.post('/api/khata', async (req, res) => {
     }
 });
 
-app.put('/api/khata/:id', async (req, res) => {
+app.put('/api/khata/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { date, client_name, notes, debit, credit } = req.body;
@@ -317,7 +394,7 @@ app.put('/api/khata/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/khata/:id', async (req, res) => {
+app.delete('/api/khata/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
         const query = 'DELETE FROM khata WHERE id=?';

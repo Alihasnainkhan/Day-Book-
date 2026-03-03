@@ -51,7 +51,12 @@ document.addEventListener('DOMContentLoaded', () => {
             opt_exp: 'Expense',
             opt_pay: 'Payment Recvd',
             opt_sale: 'Sale',
-            opt_purch: 'Purchase'
+            opt_purch: 'Purchase',
+            tab_wheat: 'Wheat',
+            tab_rice: 'Rice',
+            tab_till: 'Till',
+            tab_sarsu: 'Sarsu',
+            tab_others: 'Others'
         },
         'ur': {
             nav_daybook: 'روزنامچہ',
@@ -103,7 +108,12 @@ document.addEventListener('DOMContentLoaded', () => {
             opt_exp: 'خرچہ',
             opt_pay: 'ادائیگی',
             opt_sale: 'فروخت',
-            opt_purch: 'خریداری'
+            opt_purch: 'خریداری',
+            tab_wheat: 'گندم',
+            tab_rice: 'چاول',
+            tab_till: 'تل',
+            tab_sarsu: 'سرجوں',
+            tab_others: 'دوسرے'
         }
     };
 
@@ -159,6 +169,127 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeBtns = document.querySelectorAll('.close-modal');
     const entryForm = document.getElementById('entry-form');
 
+    // ---- Authentication Elements ----
+    const authSection = document.getElementById('auth-section');
+    const mainApp = document.getElementById('main-app');
+    const loginForm = document.getElementById('login-form');
+    const signupForm = document.getElementById('signup-form');
+    const showSignupBtn = document.getElementById('show-signup');
+    const showLoginBtn = document.getElementById('show-login');
+    const logoutBtn = document.getElementById('logout-btn');
+    const loginError = document.getElementById('login-error');
+    const signupError = document.getElementById('signup-error');
+
+    // Auth State
+    let authToken = localStorage.getItem('authToken');
+    let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+
+    // ---- API Logic & Fetch ----
+    const origin = window.location.origin;
+    const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'http://localhost:5000/api'
+        : `${origin}/api`;
+
+    function checkAuth() {
+        if (authToken) {
+            authSection.style.display = 'none';
+            mainApp.style.display = 'flex';
+            fetchTransactions();
+        } else {
+            authSection.style.display = 'flex';
+            mainApp.style.display = 'none';
+        }
+    }
+
+    // Toggle Forms
+    if (showSignupBtn) showSignupBtn.addEventListener('click', (e) => { e.preventDefault(); loginForm.style.display = 'none'; signupForm.style.display = 'block'; });
+    if (showLoginBtn) showLoginBtn.addEventListener('click', (e) => { e.preventDefault(); signupForm.style.display = 'none'; loginForm.style.display = 'block'; });
+
+    // Handle Login
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            loginError.textContent = '';
+            const btn = loginForm.querySelector('button');
+            btn.textContent = 'Logging in...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('login-username').value,
+                        password: document.getElementById('login-password').value
+                    })
+                });
+                const data = await response.json();
+
+                if (!response.ok) throw new Error(data.error || 'Login failed');
+
+                authToken = data.token;
+                currentUser = { username: data.username, role: data.role };
+                localStorage.setItem('authToken', authToken);
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+                checkAuth();
+            } catch (err) {
+                loginError.textContent = err.message;
+            } finally {
+                btn.textContent = 'Sign In';
+                btn.disabled = false;
+            }
+        });
+    }
+
+    // Handle Signup
+    if (signupForm) {
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            signupError.textContent = '';
+            const btn = signupForm.querySelector('button');
+            btn.textContent = 'Creating...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('signup-username').value,
+                        password: document.getElementById('signup-password').value,
+                        role: document.getElementById('signup-role').value
+                    })
+                });
+                const data = await response.json();
+
+                if (!response.ok) throw new Error(data.error || 'Signup failed');
+
+                authToken = data.token;
+                currentUser = { username: data.username, role: data.role };
+                localStorage.setItem('authToken', authToken);
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+                checkAuth();
+            } catch (err) {
+                signupError.textContent = err.message;
+            } finally {
+                btn.textContent = 'Create Account';
+                btn.disabled = false;
+            }
+        });
+    }
+
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            authToken = null;
+            currentUser = null;
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
+            checkAuth();
+        });
+    }
+
     // ---- Sidebar Toggle ----
     if (menuOpenBtn) {
         menuOpenBtn.addEventListener('click', () => {
@@ -183,6 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ---- SPA State & Navigation ----
     let currentPage = 'daybook';
+    let currentInventoryCategory = 'wheat'; // Default for inventory
 
     const navItems = {
         'nav-daybook': { page: 'daybook', title: getStr('nav_daybook'), icon: 'fa-book-open', showStats: true, showFilters: true },
@@ -194,6 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dateFilters = document.getElementById('date-filters');
     const pageTitleText = document.getElementById('page-name');
     const pageTitleIcon = document.getElementById('page-icon');
+    const inventoryTabs = document.getElementById('inventory-tabs');
 
     function switchPage(navId) {
         if (!navItems[navId]) return;
@@ -212,6 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Toggle Sections
         if (dashboardStats) dashboardStats.style.display = config.showStats ? 'grid' : 'none';
         if (dateFilters) dateFilters.style.visibility = config.showFilters ? 'visible' : 'hidden';
+        if (inventoryTabs) inventoryTabs.style.display = currentPage === 'inventory' ? 'flex' : 'none';
 
         // Update Table Headers
         const thead = document.querySelector('.data-table thead tr');
@@ -264,6 +398,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 switchPage(navId);
             });
         }
+    });
+
+    // ---- Inventory Tab Switching ----
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentInventoryCategory = btn.getAttribute('data-tab');
+            fetchTransactions();
+        });
     });
 
     // ---- Edit/Delete State & Modal Logic ----
@@ -411,26 +555,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ---- API Logic & Fetch ----
-    const origin = window.location.origin;
-    const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-        ? 'http://localhost:5000/api'
-        : `${origin}/api`;
 
     let transactions = [];
 
     async function fetchTransactions() {
+        if (!authToken) return; // Don't fetch if not logged in
+
         try {
             let endpoint = `${API_BASE}/transactions`;
             if (currentPage === 'inventory') endpoint = `${API_BASE}/inventory`;
             if (currentPage === 'khata') endpoint = `${API_BASE}/khata`;
 
-            const response = await fetch(endpoint);
-            if (!response.ok) throw new Error('Failed to fetch data from database');
+            const response = await fetch(endpoint, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            });
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    // Token expired or invalid
+                    logoutBtn.click();
+                    throw new Error('Session expired');
+                }
+                throw new Error('Failed to fetch data from database');
+            }
 
-            transactions = await response.json();
+            let data = await response.json();
+
+            // Client-side filtering for Inventory categories
+            if (currentPage === 'inventory') {
+                transactions = data.filter(t => t.category === currentInventoryCategory);
+            } else {
+                transactions = data;
+            }
+
             renderTransactions();
 
-            if (currentPage === 'daybook' || currentPage === 'khata') {
+            if (currentPage === 'daybook' || currentPage === 'khata' || currentPage === 'inventory') {
                 updateStats();
             }
         } catch (error) {
@@ -455,7 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 entryData = {
                     date: inputs[0].value,
                     product_name: inputs[1].value,
-                    category: type,
+                    category: currentInventoryCategory,
                     stock_in: type === 'in' ? qty : 0,
                     stock_out: type === 'out' ? qty : 0
                 };
@@ -488,13 +649,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (editingId) {
                     response = await fetch(`${endpoint}/${editingId}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`
+                        },
                         body: JSON.stringify(entryData)
                     });
                 } else {
                     response = await fetch(endpoint, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`
+                        },
                         body: JSON.stringify(entryData)
                     });
                 }
@@ -525,7 +692,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentPage === 'khata') endpoint = `${API_BASE}/khata`;
 
             const response = await fetch(`${endpoint}/${id}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
             });
 
             if (!response.ok) throw new Error('Failed to delete');
@@ -555,8 +725,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentPage === 'inventory') {
             inputs[0].value = dStr;
             inputs[1].value = row.product_name;
-            inputs[2].value = row.category; // type 'in' or 'out'
-            inputs[3].value = row.category === 'in' ? row.stock_in : row.stock_out;
+            const isStockIn = Number(row.stock_in) > 0;
+            inputs[2].value = isStockIn ? 'in' : 'out';
+            inputs[3].value = isStockIn ? row.stock_in : row.stock_out;
         } else if (currentPage === 'khata') {
             inputs[0].value = dStr;
             inputs[1].value = row.client_name;
@@ -589,13 +760,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const displayDate = new Date(row.date).toLocaleDateString('en-GB');
 
             if (currentPage === 'inventory') {
-                const badgeClass = row.category.toLowerCase() === 'in' ? 'badge badge-success' : 'badge badge-warning';
-                const catDisplay = row.category === 'in' ? getStr('cat_in') : getStr('cat_out');
+                const stockIn = Number(row.stock_in || 0);
+                const stockOut = Number(row.stock_out || 0);
+                const typeDisplay = stockIn > 0 ? getStr('cat_in') : getStr('cat_out');
+                const badgeClass = stockIn > 0 ? 'badge badge-success' : 'badge badge-warning';
+
                 tr.innerHTML = `
                     <td><strong>${row.product_name}</strong></td>
-                    <td><span class="${badgeClass}">${catDisplay}</span></td>
-                    <td class="amount-col text-success">${row.stock_in}</td>
-                    <td class="amount-col text-danger">${row.stock_out}</td>
+                    <td><span class="${badgeClass}">${typeDisplay}</span></td>
+                    <td class="amount-col text-success">${stockIn.toLocaleString('en-PK')}</td>
+                    <td class="amount-col text-danger">${stockOut.toLocaleString('en-PK')}</td>
                     <td>${displayDate}</td>
                     <td>
                         <button class="action-btn edit" onclick="editTransaction(${row.id})" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
@@ -657,6 +831,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentPage === 'khata') {
                 totalIncoming += Number(t.credit || 0);
                 totalOutgoing += Number(t.debit || 0);
+            } else if (currentPage === 'inventory') {
+                totalIncoming += Number(t.stock_in || 0);
+                totalOutgoing += Number(t.stock_out || 0);
             } else {
                 const typ = t.type || 'incoming';
                 if (typ === 'incoming') totalIncoming += Number(t.amount || 0);
@@ -668,9 +845,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const numOutgoing = document.querySelector('.stat-card.outgoing .stat-value');
         const netBalance = document.querySelector('.stat-card.balance .stat-value');
 
-        if (numIncoming) numIncoming.textContent = `₨ ${totalIncoming.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`;
-        if (numOutgoing) numOutgoing.textContent = `₨ ${totalOutgoing.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`;
-        if (netBalance) netBalance.textContent = `₨ ${(totalIncoming - totalOutgoing).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`;
+        // Update labels for Inventory
+        const incomingLabel = document.querySelector('.stat-card.incoming .stat-label');
+        const outgoingLabel = document.querySelector('.stat-card.outgoing .stat-label');
+        const balanceLabel = document.querySelector('.stat-card.balance .stat-label');
+
+        if (currentPage === 'inventory') {
+            if (incomingLabel) incomingLabel.textContent = getStr('col_stock_in');
+            if (outgoingLabel) outgoingLabel.textContent = getStr('col_stock_out');
+            if (balanceLabel) balanceLabel.textContent = 'Net Stock';
+
+            if (numIncoming) numIncoming.textContent = totalIncoming.toLocaleString('en-PK');
+            if (numOutgoing) numOutgoing.textContent = totalOutgoing.toLocaleString('en-PK');
+            if (netBalance) netBalance.textContent = (totalIncoming - totalOutgoing).toLocaleString('en-PK');
+        } else {
+            if (incomingLabel) incomingLabel.textContent = getStr('stat_incoming');
+            if (outgoingLabel) outgoingLabel.textContent = getStr('stat_outgoing');
+            if (balanceLabel) balanceLabel.textContent = getStr('stat_balance');
+
+            if (numIncoming) numIncoming.textContent = `₨ ${totalIncoming.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`;
+            if (numOutgoing) numOutgoing.textContent = `₨ ${totalOutgoing.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`;
+            if (netBalance) netBalance.textContent = `₨ ${(totalIncoming - totalOutgoing).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`;
+        }
     }
 
     // ---- Print & PDF Hooks ----
@@ -696,6 +892,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Call render on first load
-    fetchTransactions();
+    // Call render on first load if authenticated
+    checkAuth();
 });
