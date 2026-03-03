@@ -14,9 +14,9 @@ app.use(express.static(__dirname)); // Serve frontend files globally
 // Database Connection Setup
 let pool = mysql.createPool({
     host: 'mysql-3ebda4f-ah9742400-21d2.j.aivencloud.com',
-    user: process.env.DB_USER || 'avnadmin',
+    user: 'avnadmin',
     password: process.env.DB_PASSWORD || Buffer.from('QVZOU19PazJ4QjR2ZUdLeVNVYWdkOEo0', 'base64').toString('utf-8'),
-    database: process.env.DB_NAME || 'defaultdb',
+    database: 'defaultdb',
     port: process.env.DB_PORT || 10784,
     ssl: { rejectUnauthorized: false },
     waitForConnections: true,
@@ -29,12 +29,12 @@ async function initDB() {
         // First ensure DB exists using a fresh connection w/o database selected
         const initialConnection = await mysql.createConnection({
             host: 'mysql-3ebda4f-ah9742400-21d2.j.aivencloud.com',
-            user: process.env.DB_USER || 'avnadmin',
+            user: 'avnadmin',
             password: process.env.DB_PASSWORD || Buffer.from('QVZOU19PazJ4QjR2ZUdLeVNVYWdkOEo0', 'base64').toString('utf-8'),
             port: process.env.DB_PORT || 10784,
             ssl: { rejectUnauthorized: false }
         });
-        const dbName = process.env.DB_NAME || 'defaultdb';
+        const dbName = 'defaultdb';
         await initialConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`);
         await initialConnection.end();
 
