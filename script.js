@@ -64,7 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
             opt_kg: 'kg',
             opt_mn: 'mn (40kg)',
             col_unit: 'Unit',
-            col_price: 'Price'
+            col_price: 'Price',
+            col_total: 'Total (₨)'
         },
         'ur': {
             nav_daybook: 'روزنامچہ',
@@ -129,7 +130,8 @@ document.addEventListener('DOMContentLoaded', () => {
             opt_kg: 'کلو',
             opt_mn: 'من',
             col_unit: 'اکائی',
-            col_price: 'قیمت'
+            col_price: 'قیمت',
+            col_total: 'کل رقم (₨)'
         }
     };
 
@@ -374,6 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <th class="amount-col" data-i18n="col_stock_out">${getStr('col_stock_out')}</th>
                     <th data-i18n="col_unit">${getStr('col_unit')}</th>
                     <th class="amount-col" data-i18n="col_price">${getStr('col_price')}</th>
+                    <th class="amount-col" data-i18n="col_total">${getStr('col_total')}</th>
                     <th class="amount-col" data-i18n="col_balance">${getStr('col_balance')}</th>
                     <th data-i18n="col_date">${getStr('col_date')}</th>
                     <th data-i18n="col_actions">${getStr('col_actions')}</th>
@@ -642,14 +645,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 endpoint = `${API_BASE}/inventory`;
                 const inputs = entryForm.querySelectorAll('input, select');
                 const type = inputs[2].value;
-                const qty = Number(inputs[3].value);
+                let qty = Number(inputs[3].value);
+                const unit = inputs[4].value;
+
+                // mn to kg conversion for stock maintenance
+                const storedQty = (unit === 'mn') ? (qty * 40) : qty;
+
                 entryData = {
                     date: inputs[0].value,
                     product_name: inputs[1].value,
                     category: currentInventoryCategory,
-                    stock_in: type === 'in' ? qty : 0,
-                    stock_out: type === 'out' ? qty : 0,
-                    unit: inputs[4].value,
+                    stock_in: type === 'in' ? storedQty : 0,
+                    stock_out: type === 'out' ? storedQty : 0,
+                    unit: unit,
                     price: Number(inputs[5].value || 0)
                 };
             } else if (currentPage === 'khata') {
@@ -758,9 +766,15 @@ document.addEventListener('DOMContentLoaded', () => {
             inputs[0].value = dStr;
             inputs[1].value = row.product_name;
             const isStockIn = Number(row.stock_in) > 0;
+            const storedQty = isStockIn ? Number(row.stock_in) : Number(row.stock_out);
+            const unit = row.unit || 'kg';
+
+            // Convert back to original unit for display in form
+            const displayQty = (unit === 'mn') ? (storedQty / 40) : storedQty;
+
             inputs[2].value = isStockIn ? 'in' : 'out';
-            inputs[3].value = isStockIn ? row.stock_in : row.stock_out;
-            inputs[4].value = row.unit || 'kg';
+            inputs[3].value = displayQty;
+            inputs[4].value = unit;
             inputs[5].value = row.price || 0;
         } else if (currentPage === 'khata') {
             inputs[0].value = dStr;
@@ -785,7 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         if (transactions.length === 0) {
-            const colCount = (currentPage === 'inventory') ? 9 : 6;
+            const colCount = (currentPage === 'inventory') ? 10 : 6;
             tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align: center; color: var(--text-muted);">${getStr('no_data')}</td></tr>`;
             return;
         }
@@ -803,24 +817,34 @@ document.addEventListener('DOMContentLoaded', () => {
             const displayDate = new Date(row.date).toLocaleDateString('en-GB');
 
             if (currentPage === 'inventory') {
-                const stockIn = Number(row.stock_in || 0);
-                const stockOut = Number(row.stock_out || 0);
-                const unitDisplay = row.unit === 'mn' ? getStr('opt_mn') : getStr('opt_kg');
-                const priceDisplay = Number(row.price || 0).toLocaleString('en-PK', { minimumFractionDigits: 2 });
-                const typeDisplay = stockIn > 0 ? getStr('cat_in') : getStr('cat_out');
-                const badgeClass = stockIn > 0 ? 'badge badge-success' : 'badge badge-warning';
+                const storedStockIn = Number(row.stock_in || 0);
+                const storedStockOut = Number(row.stock_out || 0);
+                const unit = row.unit || 'kg';
+                const price = Number(row.price || 0);
+
+                // Convert back from storage (kg) to display unit for the "Price * Qty" math
+                const qtyOriginal = (unit === 'mn') ? (Math.max(storedStockIn, storedStockOut) / 40) : Math.max(storedStockIn, storedStockOut);
+                const totalAmount = qtyOriginal * price;
+
+                const unitDisplay = unit === 'mn' ? getStr('opt_mn') : getStr('opt_kg');
+                const priceDisplay = price.toLocaleString('en-PK', { minimumFractionDigits: 2 });
+                const totalDisplay = totalAmount.toLocaleString('en-PK', { minimumFractionDigits: 2 });
+
+                const typeDisplay = storedStockIn > 0 ? getStr('cat_in') : getStr('cat_out');
+                const badgeClass = storedStockIn > 0 ? 'badge badge-success' : 'badge badge-warning';
 
                 const currentBalance = balanceTracker;
                 // Prepare for next row (which is older in the DESC order)
-                balanceTracker -= (stockIn - stockOut);
+                balanceTracker -= (storedStockIn - storedStockOut);
 
                 tr.innerHTML = `
                     <td><strong>${row.product_name}</strong></td>
                     <td><span class="${badgeClass}">${typeDisplay}</span></td>
-                    <td class="amount-col text-success">${stockIn.toLocaleString('en-PK')}</td>
-                    <td class="amount-col text-danger">${stockOut.toLocaleString('en-PK')}</td>
+                    <td class="amount-col text-success">${storedStockIn.toLocaleString('en-PK')}</td>
+                    <td class="amount-col text-danger">${storedStockOut.toLocaleString('en-PK')}</td>
                     <td>${unitDisplay}</td>
                     <td class="amount-col">₨ ${priceDisplay}</td>
+                    <td class="amount-col" style="font-weight: bold; color: var(--text-main);">₨ ${totalDisplay}</td>
                     <td class="amount-col" style="font-weight: bold; color: var(--primary);">${currentBalance.toLocaleString('en-PK')}</td>
                     <td>${displayDate}</td>
                     <td>
