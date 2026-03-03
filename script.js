@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
             col_pname: 'Product Name',
             col_stock_in: 'Stock In',
             col_stock_out: 'Stock Out',
+            col_balance: 'Remaining Stock',
             col_client: 'Client / Party',
             col_notes: 'Notes',
             col_debit: 'Debit (Out)',
@@ -30,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
             lbl_qty: 'Quantity',
             lbl_client: 'Client / Party Name',
             lbl_amt: 'Amount (₨)',
+            lbl_balance: 'Net Stock',
             lbl_notes: 'Notes (Optional)',
             lbl_details: 'Details',
             lbl_cat: 'Category',
@@ -71,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
             col_pname: 'پراڈکٹ کا نام',
             col_stock_in: 'سٹاک وصول',
             col_stock_out: 'سٹاک خروج',
+            col_balance: 'باقی سٹاک',
             col_client: 'پارٹی کا نام',
             col_notes: 'تفصیل',
             col_debit: 'نام',
@@ -87,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
             lbl_qty: 'مقدار',
             lbl_client: 'پارٹی کا نام',
             lbl_amt: 'رقم (₨)',
+            lbl_balance: 'کل سٹاک',
             lbl_notes: 'تفصیل (اختیاری)',
             lbl_details: 'تفصیل',
             lbl_cat: 'زمرہ',
@@ -356,6 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <th data-i18n="col_category">${getStr('col_category')}</th>
                     <th class="amount-col" data-i18n="col_stock_in">${getStr('col_stock_in')}</th>
                     <th class="amount-col" data-i18n="col_stock_out">${getStr('col_stock_out')}</th>
+                    <th class="amount-col" data-i18n="col_balance">${getStr('col_balance')}</th>
                     <th data-i18n="col_date">${getStr('col_date')}</th>
                     <th data-i18n="col_actions">${getStr('col_actions')}</th>
                 `;
@@ -751,8 +756,17 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         if (transactions.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">${getStr('no_data')}</td></tr>`;
+            const colCount = (currentPage === 'inventory') ? 7 : 6;
+            tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align: center; color: var(--text-muted);">${getStr('no_data')}</td></tr>`;
             return;
+        }
+
+        // Pre-calculate current total for inventory running balance
+        let balanceTracker = 0;
+        if (currentPage === 'inventory') {
+            transactions.forEach(t => {
+                balanceTracker += (Number(t.stock_in || 0) - Number(t.stock_out || 0));
+            });
         }
 
         transactions.forEach(row => {
@@ -765,11 +779,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const typeDisplay = stockIn > 0 ? getStr('cat_in') : getStr('cat_out');
                 const badgeClass = stockIn > 0 ? 'badge badge-success' : 'badge badge-warning';
 
+                const currentBalance = balanceTracker;
+                // Prepare for next row (which is older in the DESC order)
+                balanceTracker -= (stockIn - stockOut);
+
                 tr.innerHTML = `
                     <td><strong>${row.product_name}</strong></td>
                     <td><span class="${badgeClass}">${typeDisplay}</span></td>
                     <td class="amount-col text-success">${stockIn.toLocaleString('en-PK')}</td>
                     <td class="amount-col text-danger">${stockOut.toLocaleString('en-PK')}</td>
+                    <td class="amount-col" style="font-weight: bold; color: var(--primary);">${currentBalance.toLocaleString('en-PK')}</td>
                     <td>${displayDate}</td>
                     <td>
                         <button class="action-btn edit" onclick="editTransaction(${row.id})" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
