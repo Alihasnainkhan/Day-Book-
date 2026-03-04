@@ -195,6 +195,19 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
+// Middleware to verify JWT token
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) return res.status(403).json({ error: 'No token provided' });
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+        if (err) return res.status(401).json({ error: 'Unauthorized!' });
+        req.user = decoded; // Store user details {id, username, role}
+        next();
+    });
+};
+
 app.post('/api/change-password', verifyToken, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
@@ -226,19 +239,6 @@ app.post('/api/change-password', verifyToken, async (req, res) => {
         res.status(500).json({ error: 'Failed to change password', details: error.message });
     }
 });
-
-// Middleware to verify JWT token
-const verifyToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    if (!authHeader) return res.status(403).json({ error: 'No token provided' });
-
-    const token = authHeader.split(' ')[1];
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-        if (err) return res.status(401).json({ error: 'Unauthorized!' });
-        req.user = decoded; // Store user details {id, username, role}
-        next();
-    });
-};
 
 // ================= TRANSACTIONS API =================
 app.get('/api/transactions', verifyToken, async (req, res) => {
