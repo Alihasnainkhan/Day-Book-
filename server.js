@@ -138,6 +138,26 @@ app.post('/api/signup', async (req, res) => {
         const { username, password, role } = req.body;
         if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
+        // Check if there are any users in the DB
+        const [allUsers] = await pool.query('SELECT COUNT(*) as count FROM users');
+        const isFirstUser = allUsers[0].count === 0;
+
+        // If not the first user, we must ensure an admin is creating this account
+        if (!isFirstUser) {
+            const authHeader = req.headers['authorization'];
+            if (!authHeader) return res.status(403).json({ error: 'Only admins can create new accounts' });
+
+            const token = authHeader.split(' ')[1];
+            try {
+                const decoded = jwt.verify(token, JWT_SECRET);
+                if (decoded.role !== 'admin') {
+                    return res.status(403).json({ error: 'Only admins can create new accounts' });
+                }
+            } catch (err) {
+                return res.status(401).json({ error: 'Unauthorized!' });
+            }
+        }
+
         // Check if user exists
         const [existing] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
         if (existing.length > 0) return res.status(400).json({ error: 'Username already exists' });
@@ -168,10 +188,42 @@ app.post('/api/login', async (req, res) => {
         if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
 
         const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-        res.json({ message: 'Login successful', token, role: user.role, username: user.username });
+        res.json({ token, username: user.username, role: user.role });
     } catch (error) {
         console.error("Login error:", error);
         res.status(500).json({ error: 'Login failed', details: error.message });
+    }
+});
+
+app.post('/api/change-password', verifyToken, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user.id;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Current and new password are required' });
+        }
+
+        // Fetch user's current hashed password
+        const [users] = await pool.query('SELECT password FROM users WHERE id = ?', [userId]);
+        if (users.length === 0) return res.status(404).json({ error: 'User not found' });
+
+        const user = users[0];
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Incorrect current password' });
+        }
+
+        // Hash the new password and update the database
+        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+        await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashedNewPassword, userId]);
+
+        res.json({ message: 'Password updated successfully' });
+
+    } catch (error) {
+        console.error("Change password error:", error);
+        res.status(500).json({ error: 'Failed to change password', details: error.message });
     }
 });
 
@@ -191,7 +243,27 @@ const verifyToken = (req, res, next) => {
 // ================= TRANSACTIONS API =================
 app.get('/api/transactions', verifyToken, async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM transactions WHERE user_id = ? ORDER BY date DESC, created_at DESC', [req.user.id]);
+        let query;
+        let params = [];
+        if (req.user.role === 'admin') {
+            query = `
+                SELECT t.*, u.username as owner_name 
+                FROM transactions t 
+                LEFT JOIN users u ON t.user_id = u.id 
+                ORDER BY t.date DESC, t.created_at DESC
+            `;
+        } else {
+            query = `
+                SELECT t.*, u.username as owner_name 
+                FROM transactions t 
+                LEFT JOIN users u ON t.user_id = u.id 
+                WHERE t.user_id = ? 
+                ORDER BY t.date DESC, t.created_at DESC
+            `;
+            params = [req.user.id];
+        }
+
+        const [rows] = await pool.query(query, params);
         res.json(rows);
     } catch (error) {
         console.error("Error fetching transactions:", error);
@@ -275,7 +347,27 @@ app.delete('/api/transactions/:id', verifyToken, async (req, res) => {
 // ================= INVENTORY API =================
 app.get('/api/inventory', verifyToken, async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM inventory WHERE user_id = ? ORDER BY date DESC, created_at DESC', [req.user.id]);
+        let query;
+        let params = [];
+        if (req.user.role === 'admin') {
+            query = `
+                SELECT i.*, u.username as owner_name 
+                FROM inventory i 
+                LEFT JOIN users u ON i.user_id = u.id 
+                ORDER BY i.date DESC, i.created_at DESC
+            `;
+        } else {
+            query = `
+                SELECT i.*, u.username as owner_name 
+                FROM inventory i 
+                LEFT JOIN users u ON i.user_id = u.id 
+                WHERE i.user_id = ? 
+                ORDER BY i.date DESC, i.created_at DESC
+            `;
+            params = [req.user.id];
+        }
+
+        const [rows] = await pool.query(query, params);
         res.json(rows);
     } catch (error) {
         console.error("Error fetching inventory:", error);
@@ -348,7 +440,27 @@ app.delete('/api/inventory/:id', verifyToken, async (req, res) => {
 // ================= KHATA API =================
 app.get('/api/khata', verifyToken, async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM khata WHERE user_id = ? ORDER BY date DESC, created_at DESC', [req.user.id]);
+        let query;
+        let params = [];
+        if (req.user.role === 'admin') {
+            query = `
+                SELECT k.*, u.username as owner_name 
+                FROM khata k 
+                LEFT JOIN users u ON k.user_id = u.id 
+                ORDER BY k.date DESC, k.created_at DESC
+            `;
+        } else {
+            query = `
+                SELECT k.*, u.username as owner_name 
+                FROM khata k 
+                LEFT JOIN users u ON k.user_id = u.id 
+                WHERE k.user_id = ? 
+                ORDER BY k.date DESC, k.created_at DESC
+            `;
+            params = [req.user.id];
+        }
+
+        const [rows] = await pool.query(query, params);
         res.json(rows);
     } catch (error) {
         console.error("Error fetching khata:", error);

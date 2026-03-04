@@ -219,6 +219,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (authToken) {
             authSection.style.display = 'none';
             mainApp.style.display = 'flex';
+
+            // Set profile display name
+            const usernameDisplay = document.getElementById('current-username-display');
+            if (usernameDisplay && currentUser) {
+                usernameDisplay.textContent = currentUser.username;
+            }
+
             fetchTransactions();
         } else {
             authSection.style.display = 'flex';
@@ -279,7 +286,10 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const response = await fetch(`${API_BASE}/signup`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': authToken ? `Bearer ${authToken}` : '' // Admin token required unless it's the very first user
+                    },
                     body: JSON.stringify({
                         username: document.getElementById('signup-username').value,
                         password: document.getElementById('signup-password').value,
@@ -288,18 +298,100 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const data = await response.json();
 
-                if (!response.ok) throw new Error(data.error || 'Signup failed');
+                // We only automatically log in if we weren't already logged in
+                // (i.e. if Ali is admin creating a user, he shouldn't be suddenly logged out of his admin account)
+                if (!authToken) {
+                    authToken = data.token;
+                    currentUser = { username: data.username, role: data.role };
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    checkAuth();
+                } else {
+                    alert('User created successfully. They can now log in.');
+                    signupForm.reset();
+                    // Keep Ali logged in on admin account
+                }
 
-                authToken = data.token;
-                currentUser = { username: data.username, role: data.role };
-                localStorage.setItem('authToken', authToken);
-                localStorage.setItem('currentUser', JSON.stringify(currentUser));
-
-                checkAuth();
             } catch (err) {
                 signupError.textContent = err.message;
             } finally {
                 btn.textContent = 'Create Account';
+                btn.disabled = false;
+            }
+        });
+    }
+
+    // ---- Change Password Logic ----
+    const pwModal = document.getElementById('password-modal');
+    const userProfileBtn = document.getElementById('user-profile-btn');
+    const closePwBtn = document.querySelector('.close-pw-modal');
+    const pwForm = document.getElementById('password-form');
+    const pwError = document.getElementById('pw-error');
+    const pwSuccess = document.getElementById('pw-success');
+
+    if (userProfileBtn) {
+        userProfileBtn.addEventListener('click', () => {
+            pwError.textContent = '';
+            pwSuccess.textContent = '';
+            if (pwForm) pwForm.reset();
+            if (pwModal) pwModal.classList.add('active');
+        });
+    }
+
+    if (closePwBtn) {
+        closePwBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            pwModal.classList.remove('active');
+        });
+    }
+
+    if (pwForm) {
+        pwForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            pwError.textContent = '';
+            pwSuccess.textContent = '';
+
+            const currentPw = document.getElementById('pw-current').value;
+            const newPw = document.getElementById('pw-new').value;
+            const confirmPw = document.getElementById('pw-confirm').value;
+
+            if (newPw !== confirmPw) {
+                pwError.textContent = 'New passwords do not match!';
+                return;
+            }
+
+            const btn = pwForm.querySelector('button');
+            const originalText = btn.textContent;
+            btn.textContent = 'Updating...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/change-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to update password');
+                }
+
+                pwSuccess.textContent = 'Password updated successfully!';
+                pwForm.reset();
+                setTimeout(() => {
+                    if (pwModal) pwModal.classList.remove('active');
+                    pwSuccess.textContent = '';
+                }, 2000);
+
+            } catch (err) {
+                pwError.textContent = err.message;
+            } finally {
+                btn.textContent = originalText;
                 btn.disabled = false;
             }
         });
@@ -416,9 +508,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update Table Headers
         const thead = document.querySelector('.data-table thead tr');
         if (thead) {
+            const isAdmin = currentUser && currentUser.role === 'admin';
+            const ownerHeader = isAdmin ? `<th>Owner</th>` : '';
+
             if (currentPage === 'inventory') {
                 thead.innerHTML = `
                     <th data-i18n="col_pname">${getStr('col_pname')}</th>
+                    ${ownerHeader}
                     <th data-i18n="col_category">${getStr('col_category')}</th>
                     <th class="amount-col" data-i18n="col_stock_in">${getStr('col_stock_in')}</th>
                     <th class="amount-col" data-i18n="col_stock_out">${getStr('col_stock_out')}</th>
@@ -432,6 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (currentPage === 'khata') {
                 thead.innerHTML = `
                     <th data-i18n="col_client">${getStr('col_client')}</th>
+                    ${ownerHeader}
                     <th data-i18n="col_notes">${getStr('col_notes')}</th>
                     <th class="amount-col" data-i18n="col_debit">${getStr('col_debit')}</th>
                     <th class="amount-col" data-i18n="col_credit">${getStr('col_credit')}</th>
@@ -441,6 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 thead.innerHTML = `
                     <th data-i18n="col_details">${getStr('col_details')}</th>
+                    ${ownerHeader}
                     <th data-i18n="col_category">${getStr('col_category')}</th>
                     <th class="amount-col" data-i18n="col_outgoing">${getStr('col_outgoing')}</th>
                     <th class="amount-col" data-i18n="col_incoming">${getStr('col_incoming')}</th>
@@ -901,6 +999,8 @@ document.addEventListener('DOMContentLoaded', () => {
         transactions.forEach(row => {
             const tr = document.createElement('tr');
             const displayDate = new Date(row.date).toLocaleDateString('en-GB');
+            const isAdmin = currentUser && currentUser.role === 'admin';
+            const ownerBadge = isAdmin ? `<td><span class="badge badge-secondary" style="background:#f3f4f6; color:#374151;">👤 ${row.owner_name || 'Unknown'}</span></td>` : '';
 
             if (currentPage === 'inventory') {
                 const storedStockIn = Number(row.stock_in || 0);
@@ -925,6 +1025,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 tr.innerHTML = `
                     <td><strong>${row.product_name}</strong></td>
+                    ${ownerBadge}
                     <td><span class="${badgeClass}">${typeDisplay}</span></td>
                     <td class="amount-col text-success">${storedStockIn.toLocaleString('en-PK')}</td>
                     <td class="amount-col text-danger">${storedStockOut.toLocaleString('en-PK')}</td>
@@ -941,6 +1042,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (currentPage === 'khata') {
                 tr.innerHTML = `
                     <td><strong>${row.client_name}</strong></td>
+                    ${ownerBadge}
                     <td><span class="text-muted">${row.notes || '-'}</span></td>
                     <td class="amount-col text-danger">${Number(row.debit).toLocaleString('en-PK')}</td>
                     <td class="amount-col text-success">${Number(row.credit).toLocaleString('en-PK')}</td>
@@ -967,6 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 tr.innerHTML = `
                     <td><strong>${row.details || '-'}</strong></td>
+                    ${ownerBadge}
                     <td><span class="${badgeClass}">${catDisplay}</span></td>
                     <td class="amount-col">${outgoingStr}</td>
                     <td class="amount-col">${incomingStr}</td>
