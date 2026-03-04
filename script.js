@@ -226,6 +226,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 usernameDisplay.textContent = currentUser.username;
             }
 
+            const navUsers = document.getElementById('nav-users');
+            if (navUsers) {
+                navUsers.style.display = (currentUser && currentUser.role === 'admin') ? 'block' : 'none';
+            }
+
             fetchTransactions();
         } else {
             authSection.style.display = 'flex';
@@ -475,7 +480,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const navItems = {
         'nav-daybook': { page: 'daybook', title: getStr('nav_daybook'), icon: 'fa-book-open', showStats: true, showFilters: true },
         'nav-inventory': { page: 'inventory', title: getStr('nav_inventory'), icon: 'fa-boxes-stacked', showStats: false, showFilters: false },
-        'nav-khata': { page: 'khata', title: getStr('nav_khata'), icon: 'fa-wallet', showStats: true, showFilters: true }
+        'nav-khata': { page: 'khata', title: getStr('nav_khata'), icon: 'fa-wallet', showStats: true, showFilters: true },
+        'nav-users': { page: 'users', title: 'Users List', icon: 'fa-users', showStats: false, showFilters: false }
     };
 
     const dashboardStats = document.getElementById('dashboard-stats');
@@ -504,6 +510,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dateFilters) dateFilters.style.visibility = config.showFilters ? 'visible' : 'hidden';
         if (inventoryTabs) inventoryTabs.style.display = currentPage === 'inventory' ? 'flex' : 'none';
         if (inventorySummary) inventorySummary.style.display = currentPage === 'inventory' ? 'grid' : 'none';
+
+        if (addEntryBtn) {
+            addEntryBtn.style.display = currentPage === 'users' ? 'none' : 'block';
+        }
 
         // Update Table Headers
         const thead = document.querySelector('.data-table thead tr');
@@ -534,6 +544,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <th class="amount-col" data-i18n="col_credit">${getStr('col_credit')}</th>
                     <th data-i18n="col_date">${getStr('col_date')}</th>
                     <th data-i18n="col_actions">${getStr('col_actions')}</th>
+                `;
+            } else if (currentPage === 'users') {
+                thead.innerHTML = `
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Password (Admin View)</th>
+                    <th>Joined At</th>
+                    <th>Actions</th>
                 `;
             } else {
                 thead.innerHTML = `
@@ -744,6 +762,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let endpoint = `${API_BASE}/transactions`;
             if (currentPage === 'inventory') endpoint = `${API_BASE}/inventory`;
             if (currentPage === 'khata') endpoint = `${API_BASE}/khata`;
+            if (currentPage === 'users') endpoint = `${API_BASE}/users`;
 
             const response = await fetch(endpoint, {
                 headers: {
@@ -1050,6 +1069,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>
                         <button class="action-btn edit" onclick="editTransaction(${row.id})" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
                         <button class="action-btn delete" onclick="deleteTransaction(${row.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                `;
+            } else if (currentPage === 'users') {
+                // Formatting for the users table
+                const createdDate = new Date(row.created_at).toLocaleDateString('en-GB');
+                const roleBadge = row.role === 'admin' ? '<span class="badge badge-warning">Admin</span>' : '<span class="badge badge-success">User</span>';
+
+                tr.innerHTML = `
+                    <td><strong>${row.username}</strong></td>
+                    <td>${roleBadge}</td>
+                    <td><code style="background:var(--bg-light); padding:3px 6px; border-radius:4px;">${row.password}</code></td>
+                    <td>${createdDate}</td>
+                    <td>
+                        <!-- Read-only view, delete could be added later if needed -->
+                        <span class="text-muted" style="font-size: 13px;">N/A</span>
                     </td>
                 `;
             } else {

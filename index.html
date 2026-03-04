@@ -35,17 +35,14 @@
                     <input type="password" id="login-password" required>
                 </div>
                 <button type="submit" class="btn-primary" style="width: 100%;">Sign In</button>
-                <!-- Signup link hidden to prevent unauthorized users -->
-                <p class="auth-switch" style="display:none;">Don't have an account? <a href="#" id="show-signup">Sign
+                <p class="auth-switch">Don't have an account? <a href="#" id="show-signup">Sign
                         up</a></p>
                 <div id="login-error" class="auth-error"></div>
             </form>
 
-            <!-- Sign Up Form (Hidden permanently for regular users) -->
+            <!-- Sign Up Form (Hidden by default) -->
             <form id="signup-form" style="display: none;">
-                <h3>Register User</h3>
-                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Admin only: Use this secret
-                    form to create users.</p>
+                <h3>Sign Up</h3>
                 <div class="form-group">
                     <label>Username</label>
                     <input type="text" id="signup-username" required>
@@ -54,11 +51,11 @@
                     <label>Password</label>
                     <input type="password" id="signup-password" required>
                 </div>
-                <!-- Role hidden to default to user unless Ali explicitly changes it in DB -->
+                <!-- Role is forced to user for public signups -->
                 <input type="hidden" id="signup-role" value="user">
 
                 <button type="submit" class="btn-primary" style="width: 100%;">Create Account</button>
-                <p class="auth-switch"><a href="#" id="show-login">Back to Login</a></p>
+                <p class="auth-switch">Already have an account? <a href="#" id="show-login">Login</a></p>
                 <div id="signup-error" class="auth-error"></div>
             </form>
         </div>
@@ -88,6 +85,9 @@
                     <li id="nav-khata">
                         <a href="#"><i class="fa-solid fa-wallet"></i> <span data-i18n="nav_khata">Khata
                                 Details</span></a>
+                    </li>
+                    <li id="nav-users" style="display: none;">
+                        <a href="#"><i class="fa-solid fa-users"></i> <span>Users List</span></a>
                     </li>
                 </ul>
             </nav>

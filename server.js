@@ -113,6 +113,21 @@ async function initDB() {
         `;
         await pool.query(createKhataQuery);
         console.log("Khata table ready.");
+
+        // Ensure the Master Admin account exists
+        const adminUsername = 'admin';
+        const adminPassword = 'Ali1214@'; // Requested plain text password for admin
+        const [existingAdmin] = await pool.query('SELECT * FROM users WHERE username = ?', [adminUsername]);
+
+        if (existingAdmin.length === 0) {
+            await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [adminUsername, adminPassword, 'admin']);
+            console.log("Master Admin account created.");
+        } else {
+            // Force reset the admin password to standard just in case
+            await pool.query('UPDATE users SET password = ?, role = ? WHERE username = ?', [adminPassword, 'admin', adminUsername]);
+            console.log("Master Admin account verified.");
+        }
+
     } catch (error) {
         console.error("Database connection error:", error);
     }
@@ -138,34 +153,18 @@ app.post('/api/signup', async (req, res) => {
         const { username, password, role } = req.body;
         if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
-        // Check if there are any users in the DB
-        const [allUsers] = await pool.query('SELECT COUNT(*) as count FROM users');
-        const isFirstUser = allUsers[0].count === 0;
-
-        // If not the first user, we must ensure an admin is creating this account
-        if (!isFirstUser) {
-            const authHeader = req.headers['authorization'];
-            if (!authHeader) return res.status(403).json({ error: 'Only admins can create new accounts' });
-
-            const token = authHeader.split(' ')[1];
-            try {
-                const decoded = jwt.verify(token, JWT_SECRET);
-                if (decoded.role !== 'admin') {
-                    return res.status(403).json({ error: 'Only admins can create new accounts' });
-                }
-            } catch (err) {
-                return res.status(401).json({ error: 'Unauthorized!' });
-            }
-        }
+        // Anyone can create a "user" account.
+        // Prevent someone from sending role="admin" via API
+        const userRole = 'user';
 
         // Check if user exists
         const [existing] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
         if (existing.length > 0) return res.status(400).json({ error: 'Username already exists' });
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const userRole = role === 'admin' ? 'admin' : 'user';
-
-        const [result] = await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, hashedPassword, userRole]);
+        // User requested: "admin ko in sb ka data password sb pta chl jay"
+        // To show passwords to admin, we will store them as plain text. 
+        // (Note: This is not secure for production, but satisfies the explicit user requirement).
+        const [result] = await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [username, password, userRole]);
 
         const token = jwt.sign({ id: result.insertId, username, role: userRole }, JWT_SECRET, { expiresIn: '24h' });
         res.status(201).json({ message: 'User created successfully', token, role: userRole, username });
@@ -184,7 +183,15 @@ app.post('/api/login', async (req, res) => {
         if (users.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
 
         const user = users[0];
-        const isMatch = await bcrypt.compare(password, user.password);
+
+        // Support both plaintext (new requirement) and bcrypt (old existing users)
+        let isMatch = false;
+        if (password === user.password) {
+            isMatch = true;
+        } else {
+            isMatch = await bcrypt.compare(password, user.password).catch(() => false);
+        }
+
         if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
 
         const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
@@ -228,15 +235,29 @@ app.post('/api/change-password', verifyToken, async (req, res) => {
             return res.status(401).json({ error: 'Incorrect current password' });
         }
 
-        // Hash the new password and update the database
-        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-        await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashedNewPassword, userId]);
+        // Update the database with PLAIN TEXT password due to admin viewing requirements
+        await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, userId]);
 
         res.json({ message: 'Password updated successfully' });
 
     } catch (error) {
         console.error("Change password error:", error);
         res.status(500).json({ error: 'Failed to change password', details: error.message });
+    }
+});
+
+// ================= ADMIN API =================
+app.get('/api/users', verifyToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Access denied. Admins only.' });
+        }
+        // Fetch all users and their plain-text passwords so admin can see them
+        const [rows] = await pool.query('SELECT id, username, password, role, created_at FROM users ORDER BY created_at DESC');
+        res.json(rows);
+    } catch (error) {
+        console.error("Error fetching users:", error);
+        res.status(500).json({ error: 'Failed to fetch users', details: error.message });
     }
 });
 
