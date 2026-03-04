@@ -65,12 +65,14 @@ async function initDB() {
         const createTransactionsQuery = `
             CREATE TABLE IF NOT EXISTS transactions (
                 id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
                 details VARCHAR(255) NOT NULL,
                 category VARCHAR(100) NOT NULL,
                 type ENUM('incoming', 'outgoing') NOT NULL,
                 amount DECIMAL(15, 2) NOT NULL,
                 date DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         `;
         await pool.query(createTransactionsQuery);
@@ -80,6 +82,7 @@ async function initDB() {
         const createInventoryQuery = `
             CREATE TABLE IF NOT EXISTS inventory (
                 id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
                 product_name VARCHAR(255) NOT NULL,
                 category VARCHAR(100) NOT NULL,
                 stock_in INT DEFAULT 0,
@@ -87,7 +90,8 @@ async function initDB() {
                 unit VARCHAR(20) DEFAULT 'kg',
                 price DECIMAL(15, 2) DEFAULT 0.00,
                 date DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         `;
         await pool.query(createInventoryQuery);
@@ -97,12 +101,14 @@ async function initDB() {
         const createKhataQuery = `
             CREATE TABLE IF NOT EXISTS khata (
                 id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
                 client_name VARCHAR(255) NOT NULL,
                 notes TEXT,
                 debit DECIMAL(15, 2) DEFAULT 0.00,
                 credit DECIMAL(15, 2) DEFAULT 0.00,
                 date DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         `;
         await pool.query(createKhataQuery);
@@ -185,7 +191,7 @@ const verifyToken = (req, res, next) => {
 // ================= TRANSACTIONS API =================
 app.get('/api/transactions', verifyToken, async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM transactions ORDER BY date DESC, created_at DESC');
+        const [rows] = await pool.query('SELECT * FROM transactions WHERE user_id = ? ORDER BY date DESC, created_at DESC', [req.user.id]);
         res.json(rows);
     } catch (error) {
         console.error("Error fetching transactions:", error);
@@ -204,10 +210,10 @@ app.post('/api/transactions', verifyToken, async (req, res) => {
         }
 
         const query = `
-            INSERT INTO transactions (date, details, type, amount, category) 
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO transactions (user_id, date, details, type, amount, category) 
+            VALUES (?, ?, ?, ?, ?, ?)
         `;
-        const [result] = await pool.query(query, [date, details, type, amount, category]);
+        const [result] = await pool.query(query, [req.user.id, date, details, type, amount, category]);
 
         res.status(201).json({
             message: 'Transaction added successfully',
@@ -232,9 +238,9 @@ app.put('/api/transactions/:id', verifyToken, async (req, res) => {
         const query = `
             UPDATE transactions 
             SET date=?, details=?, type=?, amount=?, category=? 
-            WHERE id=?
+            WHERE id=? AND user_id=?
         `;
-        const [result] = await pool.query(query, [date, details, type, amount, category, id]);
+        const [result] = await pool.query(query, [date, details, type, amount, category, id, req.user.id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Transaction not found' });
@@ -251,9 +257,9 @@ app.put('/api/transactions/:id', verifyToken, async (req, res) => {
 app.delete('/api/transactions/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const query = 'DELETE FROM transactions WHERE id=?';
+        const query = 'DELETE FROM transactions WHERE id=? AND user_id=?';
 
-        const [result] = await pool.query(query, [id]);
+        const [result] = await pool.query(query, [id, req.user.id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Transaction not found' });
@@ -269,7 +275,7 @@ app.delete('/api/transactions/:id', verifyToken, async (req, res) => {
 // ================= INVENTORY API =================
 app.get('/api/inventory', verifyToken, async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM inventory ORDER BY date DESC, created_at DESC');
+        const [rows] = await pool.query('SELECT * FROM inventory WHERE user_id = ? ORDER BY date DESC, created_at DESC', [req.user.id]);
         res.json(rows);
     } catch (error) {
         console.error("Error fetching inventory:", error);
@@ -286,10 +292,10 @@ app.post('/api/inventory', verifyToken, async (req, res) => {
         }
 
         const query = `
-            INSERT INTO inventory (date, product_name, category, stock_in, stock_out, unit, price) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO inventory (user_id, date, product_name, category, stock_in, stock_out, unit, price) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
-        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0, unit || 'kg', price || 0]);
+        const [result] = await pool.query(query, [req.user.id, date, product_name, category, stock_in || 0, stock_out || 0, unit || 'kg', price || 0]);
         res.status(201).json({ message: 'Inventory added', id: result.insertId });
     } catch (error) {
         console.error("Error adding inventory:", error);
@@ -309,9 +315,9 @@ app.put('/api/inventory/:id', verifyToken, async (req, res) => {
         const query = `
             UPDATE inventory 
             SET date=?, product_name=?, category=?, stock_in=?, stock_out=?, unit=?, price=? 
-            WHERE id=?
+            WHERE id=? AND user_id=?
         `;
-        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0, unit || 'kg', price || 0, id]);
+        const [result] = await pool.query(query, [date, product_name, category, stock_in || 0, stock_out || 0, unit || 'kg', price || 0, id, req.user.id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Inventory item not found' });
@@ -326,8 +332,8 @@ app.put('/api/inventory/:id', verifyToken, async (req, res) => {
 app.delete('/api/inventory/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const query = 'DELETE FROM inventory WHERE id=?';
-        const [result] = await pool.query(query, [id]);
+        const query = 'DELETE FROM inventory WHERE id=? AND user_id=?';
+        const [result] = await pool.query(query, [id, req.user.id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Inventory item not found' });
@@ -342,7 +348,7 @@ app.delete('/api/inventory/:id', verifyToken, async (req, res) => {
 // ================= KHATA API =================
 app.get('/api/khata', verifyToken, async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM khata ORDER BY date DESC, created_at DESC');
+        const [rows] = await pool.query('SELECT * FROM khata WHERE user_id = ? ORDER BY date DESC, created_at DESC', [req.user.id]);
         res.json(rows);
     } catch (error) {
         console.error("Error fetching khata:", error);
@@ -359,10 +365,10 @@ app.post('/api/khata', verifyToken, async (req, res) => {
         }
 
         const query = `
-            INSERT INTO khata (date, client_name, notes, debit, credit) 
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO khata (user_id, date, client_name, notes, debit, credit) 
+            VALUES (?, ?, ?, ?, ?, ?)
         `;
-        const [result] = await pool.query(query, [date, client_name, notes || '', debit || 0, credit || 0]);
+        const [result] = await pool.query(query, [req.user.id, date, client_name, notes || '', debit || 0, credit || 0]);
         res.status(201).json({ message: 'Khata added', id: result.insertId });
     } catch (error) {
         console.error("Error adding khata:", error);
@@ -382,9 +388,9 @@ app.put('/api/khata/:id', verifyToken, async (req, res) => {
         const query = `
             UPDATE khata 
             SET date=?, client_name=?, notes=?, debit=?, credit=? 
-            WHERE id=?
+            WHERE id=? AND user_id=?
         `;
-        const [result] = await pool.query(query, [date, client_name, notes || '', debit || 0, credit || 0, id]);
+        const [result] = await pool.query(query, [date, client_name, notes || '', debit || 0, credit || 0, id, req.user.id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Khata entry not found' });
@@ -399,8 +405,8 @@ app.put('/api/khata/:id', verifyToken, async (req, res) => {
 app.delete('/api/khata/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const query = 'DELETE FROM khata WHERE id=?';
-        const [result] = await pool.query(query, [id]);
+        const query = 'DELETE FROM khata WHERE id=? AND user_id=?';
+        const [result] = await pool.query(query, [id, req.user.id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Khata entry not found' });

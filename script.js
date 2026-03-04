@@ -201,6 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const showSignupBtn = document.getElementById('show-signup');
     const showLoginBtn = document.getElementById('show-login');
     const logoutBtn = document.getElementById('logout-btn');
+    const headerLogoutBtn = document.getElementById('header-logout-btn');
     const loginError = document.getElementById('login-error');
     const signupError = document.getElementById('signup-error');
 
@@ -304,15 +305,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const performLogout = () => {
+        authToken = null;
+        currentUser = null;
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('currentUser');
+        checkAuth();
+    };
+
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
-            authToken = null;
-            currentUser = null;
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('currentUser');
-            checkAuth();
-        });
+        logoutBtn.addEventListener('click', performLogout);
     }
+
+    if (headerLogoutBtn) {
+        headerLogoutBtn.addEventListener('click', performLogout);
+    }
+
+    // ---- Auto Logout Timer (10 Minutes) ----
+    let inactivityTime = function () {
+        let time;
+        const TEN_MINUTES = 10 * 60 * 1000; // 10 minutes in milliseconds
+
+        window.onload = resetTimer;
+        // DOM Events
+        document.onmousemove = resetTimer;
+        document.onkeypress = resetTimer;
+        document.onclick = resetTimer;
+        document.onscroll = resetTimer;
+
+        function logout() {
+            if (authToken) {
+                console.log("Auto-logging out due to inactivity...");
+                authToken = null;
+                currentUser = null;
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('currentUser');
+                checkAuth();
+                alert("You have been automatically logged out due to inactivity.");
+            }
+        }
+
+        function resetTimer() {
+            clearTimeout(time);
+            time = setTimeout(logout, TEN_MINUTES);
+        }
+    };
+
+    // Initialize the inactivity timer
+    inactivityTime();
 
     // ---- Sidebar Toggle ----
     if (menuOpenBtn) {
