@@ -949,8 +949,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeReminderBtns = document.querySelectorAll('.close-reminder-modal');
     let editingReminderId = null;
 
-    if (headerRemindersBtn) {
-        headerRemindersBtn.addEventListener('click', () => {
+    const notifDropdown = document.getElementById('notif-dropdown');
+    const viewAllRemindersLink = document.getElementById('view-all-reminders-link');
+
+    if (headerRemindersBtn && notifDropdown) {
+        headerRemindersBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (notifDropdown.style.display === 'block') {
+                notifDropdown.style.display = 'none';
+            } else {
+                notifDropdown.style.display = 'block';
+                if (typeof checkReminders === 'function') checkReminders();
+            }
+        });
+
+        window.addEventListener('click', (e) => {
+            if (!headerRemindersBtn.contains(e.target) && !notifDropdown.contains(e.target)) {
+                notifDropdown.style.display = 'none';
+            }
+        });
+    }
+
+    if (viewAllRemindersLink) {
+        viewAllRemindersLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            notifDropdown.style.display = 'none';
             switchPage('nav-reminders');
         });
     }
@@ -1046,7 +1069,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.editReminder = (id) => {
-        const row = transactions.find(t => t.id === id);
+        let row = transactions.find(t => t.id === id);
+        if (!row && window._cachedReminders) {
+            row = window._cachedReminders.find(t => t.id === id);
+        }
         if (!row) return;
 
         editingReminderId = id;
@@ -1404,16 +1430,32 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!res.ok) return;
             const allReminders = await res.json();
+            window._cachedReminders = allReminders; // Cache for global access (e.g., clicking a dropdown item)
 
             const now = new Date();
+            let dueCount = 0;
+            let dueHtml = '';
 
             for (const r of allReminders) {
                 if (r.is_completed) continue;
 
                 const remindTime = new Date(r.remind_at);
+                const diffMs = now - remindTime;
+
+                // Collect due reminders for the dropdown UI
+                if (diffMs >= 0) {
+                    dueCount++;
+                    const timeStr = remindTime.toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' });
+                    dueHtml += `
+                        <div style="padding: 12px 15px; border-bottom: 1px solid #e5e7eb; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'" onclick="document.getElementById('notif-dropdown').style.display='none'; window.editReminder(${r.id});">
+                            <strong style="display:block; font-size: 13px; color: #111827; margin-bottom: 4px;">${r.title}</strong>
+                            <span style="display:block; font-size: 12px; color: #4b5563; margin-bottom: 6px;">${r.description || ''}</span>
+                            <span style="font-size: 11px; color: #ef4444; font-weight: 600;"><i class="fa-regular fa-clock"></i> Overdue since ${timeStr}</span>
+                        </div>
+                    `;
+                }
 
                 // If it's time (within the last 2 minutes to be safe) AND we haven't notified yet
-                const diffMs = now - remindTime;
                 if (diffMs >= 0 && diffMs <= 120000 && !notifiedIds.has(r.id)) {
                     notifiedIds.add(r.id);
                     triggerNativeNotification(r.title, r.description);
@@ -1424,6 +1466,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     notifiedIds.add(r.id);
                     await handleReminderCompletion(r);
                 }
+            }
+
+            const badge = document.getElementById('notif-badge');
+            const list = document.getElementById('notif-list');
+            if (badge) {
+                badge.textContent = dueCount;
+                badge.style.display = dueCount > 0 ? 'block' : 'none';
+            }
+            if (list) {
+                list.innerHTML = dueCount > 0 ? dueHtml : '<div style="padding: 15px; text-align: center; color: #6b7280; font-size: 13px;">No due reminders</div>';
             }
         } catch (err) {
             console.error("Error polling reminders:", err);

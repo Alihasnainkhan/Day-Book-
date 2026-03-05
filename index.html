@@ -135,11 +135,31 @@
                 </div>
 
                 <div class="header-right" style="display: flex; gap: 15px; align-items: center;">
-                    <button id="header-reminders-btn" class="btn-outline"
-                        style="padding: 5px 10px; border:none; background:none; font-size: 18px; color: var(--text-main); position: relative;"
-                        title="Reminders">
-                        <i class="fa-solid fa-bell"></i>
-                    </button>
+                    <!-- Notification Bell & Dropdown -->
+                    <div style="position: relative;">
+                        <button id="header-reminders-btn" class="btn-outline"
+                            style="padding: 5px 10px; border:none; background:none; font-size: 18px; color: var(--text-main); position: relative; cursor: pointer;"
+                            title="Notifications">
+                            <i class="fa-solid fa-bell"></i>
+                            <span id="notif-badge"
+                                style="display: none; position: absolute; top: 0px; right: 4px; background: #ef4444; color: white; border-radius: 50%; padding: 2px 5px; font-size: 10px; font-weight: bold;">0</span>
+                        </button>
+
+                        <div id="notif-dropdown"
+                            style="display: none; position: absolute; top: 40px; right: -60px; width: 320px; background: #ffffff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; z-index: 1000; overflow: hidden; max-width: 90vw;">
+                            <div
+                                style="padding: 12px 15px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; display: flex; justify-content: space-between; align-items: center;">
+                                <strong style="margin: 0; font-size: 14px; color: #374151;">Due Reminders</strong>
+                                <a href="#" id="view-all-reminders-link"
+                                    style="font-size: 12px; color: #10b981; text-decoration: none; font-weight: 600;">View
+                                    All</a>
+                            </div>
+                            <div id="notif-list" style="max-height: 300px; overflow-y: auto; padding: 0;">
+                                <div style="padding: 15px; text-align: center; color: #6b7280; font-size: 13px;">No due
+                                    reminders</div>
+                            </div>
+                        </div>
+                    </div>
 
                     <button class="btn-primary" id="header-logout-btn"
                         style="background-color: #ef4444; color: white; padding: 5px 12px; font-size: 14px; border: none; border-radius: 6px; cursor: pointer;"
