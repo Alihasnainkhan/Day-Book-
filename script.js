@@ -674,6 +674,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     <label>${getStr('lbl_notes')}</label>
                     <input type="text" placeholder="Bag details, etc.">
                 </div>
+                <div class="form-group" style="padding: 12px; background: rgba(16, 185, 129, 0.05); border-radius: 8px; border: 1px dashed var(--primary); margin-top: 10px;">
+                    <label style="color: var(--primary); font-weight: bold; margin-bottom: 8px;"><i class="fa-solid fa-bell"></i> Set Reminder (Optional)</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="date" id="khata-rm-date" style="flex: 1;">
+                        <input type="time" id="khata-rm-time" style="flex: 1;">
+                    </div>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary close-modal">${getStr('btn_cancel')}</button>
                     <button type="submit" class="btn-primary">${getStr('btn_save')}</button>
@@ -883,6 +890,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 if (!response.ok) throw new Error('Failed to save to database');
+
+                // ---- Handle Optional Reminder in Khata ----
+                if (currentPage === 'khata') {
+                    const rmDate = document.getElementById('khata-rm-date');
+                    const rmTime = document.getElementById('khata-rm-time');
+                    if (rmDate && rmTime && rmDate.value && rmTime.value) {
+                        const remind_at = `${rmDate.value} ${rmTime.value}:00`;
+                        const clientName = entryForm.querySelectorAll('input, select')[1].value;
+                        const typeInput = entryForm.querySelectorAll('input, select')[2].value;
+                        const amtInput = entryForm.querySelectorAll('input, select')[3].value;
+                        const entryTypeStr = typeInput === 'debit' ? 'Dr' : 'Cr';
+
+                        const remindPayload = {
+                            title: `Khata Reminder: ${clientName}`,
+                            description: `Amount: Rs ${amtInput} (${entryTypeStr})`,
+                            remind_at: remind_at,
+                            repeat_type: 'none',
+                            is_completed: false
+                        };
+
+                        try {
+                            await fetch(`${API_BASE}/reminders`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${authToken}`
+                                },
+                                body: JSON.stringify(remindPayload)
+                            });
+                            if (typeof scheduleNotifications === 'function') scheduleNotifications();
+                        } catch (err) {
+                            console.error("Failed to simultaneously save Khata reminder:", err);
+                        }
+                    }
+                }
 
                 entryModal.classList.remove('active');
 
