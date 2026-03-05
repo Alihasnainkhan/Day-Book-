@@ -114,6 +114,23 @@ async function initDB() {
         await pool.query(createKhataQuery);
         console.log("Khata table ready.");
 
+        // Create reminders table
+        const createRemindersQuery = `
+            CREATE TABLE IF NOT EXISTS reminders (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                remind_at DATETIME NOT NULL,
+                repeat_type ENUM('none', 'daily', 'weekly', 'monthly') DEFAULT 'none',
+                is_completed BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        `;
+        await pool.query(createRemindersQuery);
+        console.log("Reminders table ready.");
+
         // Ensure the Master Admin account exists
         const adminUsername = 'admin';
         const adminPassword = 'Ali1214@'; // Requested plain text password for admin
@@ -548,5 +565,89 @@ app.delete('/api/khata/:id', verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error deleting khata:", error);
         res.status(500).json({ error: 'Failed to delete khata', details: error.message });
+    }
+});
+
+// ================= REMINDERS API =================
+app.get('/api/reminders', verifyToken, async (req, res) => {
+    try {
+        let query = 'SELECT * FROM reminders WHERE user_id = ? ORDER BY remind_at ASC';
+        let queryParams = [req.user.id];
+
+        // Admin can see all reminders, but let's just keep it to the user's own for now
+        // if (req.user.role === 'admin') {
+        //     query = 'SELECT r.*, u.username as owner_name FROM reminders r LEFT JOIN users u ON r.user_id = u.id ORDER BY r.remind_at ASC';
+        //     queryParams = [];
+        // }
+
+        const [rows] = await pool.query(query, queryParams);
+        res.json(rows);
+    } catch (error) {
+        console.error("Error fetching reminders:", error);
+        res.status(500).json({ error: 'Failed to fetch reminders', details: error.message });
+    }
+});
+
+app.post('/api/reminders', verifyToken, async (req, res) => {
+    try {
+        const { title, description, remind_at, repeat_type } = req.body;
+
+        if (!title || !remind_at) {
+            return res.status(400).json({ error: 'Title and Remind At datetime are required' });
+        }
+
+        const query = `
+            INSERT INTO reminders (user_id, title, description, remind_at, repeat_type) 
+            VALUES (?, ?, ?, ?, ?)
+        `;
+        const [result] = await pool.query(query, [req.user.id, title, description || '', remind_at, repeat_type || 'none']);
+        res.status(201).json({ message: 'Reminder created', id: result.insertId });
+    } catch (error) {
+        console.error("Error creating reminder:", error);
+        res.status(500).json({ error: 'Failed to create reminder', details: error.message });
+    }
+});
+
+app.put('/api/reminders/:id', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, description, remind_at, repeat_type, is_completed } = req.body;
+
+        if (!title || !remind_at) {
+            return res.status(400).json({ error: 'Title and Remind At datetime are required' });
+        }
+
+        const query = `
+            UPDATE reminders 
+            SET title=?, description=?, remind_at=?, repeat_type=?, is_completed=?
+            WHERE id=? AND user_id=?
+        `;
+        const [result] = await pool.query(query, [
+            title, description || '', remind_at, repeat_type || 'none', is_completed ? 1 : 0, id, req.user.id
+        ]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Reminder not found' });
+        }
+        res.json({ message: 'Reminder updated successfully' });
+    } catch (error) {
+        console.error("Error updating reminder:", error);
+        res.status(500).json({ error: 'Failed to update reminder', details: error.message });
+    }
+});
+
+app.delete('/api/reminders/:id', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const query = 'DELETE FROM reminders WHERE id=? AND user_id=?';
+        const [result] = await pool.query(query, [id, req.user.id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Reminder not found' });
+        }
+        res.json({ message: 'Reminder deleted' });
+    } catch (error) {
+        console.error("Error deleting reminder:", error);
+        res.status(500).json({ error: 'Failed to delete reminder', details: error.message });
     }
 });

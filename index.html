@@ -86,6 +86,9 @@
                         <a href="#"><i class="fa-solid fa-wallet"></i> <span data-i18n="nav_khata">Khata
                                 Details</span></a>
                     </li>
+                    <li id="nav-reminders">
+                        <a href="#"><i class="fa-solid fa-bell"></i> <span>Reminders</span></a>
+                    </li>
                     <li id="nav-users" style="display: none;">
                         <a href="#"><i class="fa-solid fa-users"></i> <span>Users List</span></a>
                     </li>
@@ -132,10 +135,12 @@
                 </div>
 
                 <div class="header-right" style="display: flex; gap: 15px; align-items: center;">
-                    <div class="language-toggle">
-                        <button class="btn-outline" id="lang-btn"
-                            style="padding: 5px 12px; font-weight: 600;">اردو</button>
-                    </div>
+                    <button id="header-reminders-btn" class="btn-outline"
+                        style="padding: 5px 10px; border:none; background:none; font-size: 18px; color: var(--text-main); position: relative;"
+                        title="Reminders">
+                        <i class="fa-solid fa-bell"></i>
+                    </button>
+
                     <button class="btn-primary" id="header-logout-btn"
                         style="background-color: #ef4444; color: white; padding: 5px 12px; font-size: 14px; border: none; border-radius: 6px; cursor: pointer;"
                         title="Logout">
@@ -284,6 +289,50 @@
                 <button class="btn-outline close-modal">Cancel</button>
                 <button class="btn-primary" type="submit" form="entry-form">Save Entry</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Reminder Modal (Hidden by Default) -->
+    <div class="modal-overlay" id="reminder-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="reminder-modal-title"><i class="fa-solid fa-bell"></i> Set Reminder</h3>
+                <button class="close-modal close-reminder-modal"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <form id="reminder-form">
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" id="rm-title" placeholder="e.g. Call Client XYZ" required>
+                </div>
+                <div class="form-group">
+                    <label>Message (Optional)</label>
+                    <textarea id="rm-desc" placeholder="Details about this reminder" rows="3"></textarea>
+                </div>
+                <!-- Flex layout for Date & Time -->
+                <div style="display: flex; gap: 15px;">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Date</label>
+                        <input type="date" id="rm-date" required>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Time</label>
+                        <input type="time" id="rm-time" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Repeat Pattern</label>
+                    <select id="rm-repeat">
+                        <option value="none">Does not repeat</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary close-modal close-reminder-modal">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Reminder</button>
+                </div>
+            </form>
         </div>
     </div>
 

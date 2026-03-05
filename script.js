@@ -481,6 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'nav-daybook': { page: 'daybook', title: getStr('nav_daybook'), icon: 'fa-book-open', showStats: true, showFilters: true },
         'nav-inventory': { page: 'inventory', title: getStr('nav_inventory'), icon: 'fa-boxes-stacked', showStats: false, showFilters: false },
         'nav-khata': { page: 'khata', title: getStr('nav_khata'), icon: 'fa-wallet', showStats: true, showFilters: true },
+        'nav-reminders': { page: 'reminders', title: 'Reminders', icon: 'fa-bell', showStats: false, showFilters: false },
         'nav-users': { page: 'users', title: 'Users List', icon: 'fa-users', showStats: false, showFilters: false }
     };
 
@@ -551,6 +552,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     <th>Role</th>
                     <th>Password (Admin View)</th>
                     <th>Joined At</th>
+                    <th>Actions</th>
+                `;
+            } else if (currentPage === 'reminders') {
+                thead.innerHTML = `
+                    <th>Title</th>
+                    <th>Message</th>
+                    <th>Time</th>
+                    <th>Repeat</th>
+                    <th>Status</th>
                     <th>Actions</th>
                 `;
             } else {
@@ -763,6 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentPage === 'inventory') endpoint = `${API_BASE}/inventory`;
             if (currentPage === 'khata') endpoint = `${API_BASE}/khata`;
             if (currentPage === 'users') endpoint = `${API_BASE}/users`;
+            if (currentPage === 'reminders') endpoint = `${API_BASE}/reminders`;
 
             const response = await fetch(endpoint, {
                 headers: {
@@ -887,6 +898,129 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // ---- Reminders Modal & Logic ----
+    const reminderModal = document.getElementById('reminder-modal');
+    const reminderForm = document.getElementById('reminder-form');
+    const headerRemindersBtn = document.getElementById('header-reminders-btn');
+    const closeReminderBtns = document.querySelectorAll('.close-reminder-modal');
+    let editingReminderId = null;
+
+    if (headerRemindersBtn) {
+        headerRemindersBtn.addEventListener('click', () => {
+            switchPage('nav-reminders');
+        });
+    }
+
+    if (addEntryBtn) {
+        const oldAddEntryListener = addEntryBtn.onclick;
+        addEntryBtn.addEventListener('click', (e) => {
+            if (currentPage === 'reminders') {
+                e.stopImmediatePropagation();
+                editingReminderId = null;
+                if (reminderForm) reminderForm.reset();
+                if (reminderModal) reminderModal.classList.add('active');
+            }
+        });
+    }
+
+    closeReminderBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (reminderModal) reminderModal.classList.remove('active');
+            editingReminderId = null;
+        });
+    });
+
+    if (reminderForm) {
+        reminderForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const title = document.getElementById('rm-title').value;
+            const desc = document.getElementById('rm-desc').value;
+            const date = document.getElementById('rm-date').value;
+            const time = document.getElementById('rm-time').value;
+            const repeat = document.getElementById('rm-repeat').value;
+
+            // Combine date and time
+            const remind_at = `${date} ${time}:00`;
+
+            const payload = { title, description: desc, remind_at, repeat_type: repeat, is_completed: false };
+
+            try {
+                let res;
+                if (editingReminderId) {
+                    res = await fetch(`${API_BASE}/reminders/${editingReminderId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    res = await fetch(`${API_BASE}/reminders`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                }
+
+                if (!res.ok) throw new Error('Failed to save reminder');
+                reminderModal.classList.remove('active');
+                editingReminderId = null;
+                reminderForm.reset();
+                if (currentPage === 'reminders') fetchTransactions();
+
+                // Re-init notifications (will define soon)
+                if (typeof scheduleNotifications === 'function') scheduleNotifications();
+            } catch (err) {
+                console.error("Error saving reminder:", err);
+                alert("Failed to save reminder.");
+            }
+        });
+    }
+
+    // ---- Global Reminder Actions ----
+    window.deleteReminder = async (id) => {
+        if (!confirm("Are you sure you want to delete this reminder?")) return;
+        try {
+            const res = await fetch(`${API_BASE}/reminders/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (!res.ok) throw new Error('Failed to delete reminder');
+            fetchTransactions();
+            if (typeof scheduleNotifications === 'function') scheduleNotifications();
+        } catch (error) {
+            console.error(error);
+            alert("Error deleting reminder.");
+        }
+    };
+
+    window.editReminder = (id) => {
+        const row = transactions.find(t => t.id === id);
+        if (!row) return;
+
+        editingReminderId = id;
+
+        // Parse the DATETIME format from the DB (e.g. 2024-03-05T10:30:00.000Z)
+        const dt = new Date(row.remind_at);
+        // Adjust for local time zone to populate inputs correctly
+        const localDate = dt.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+        const localTime = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+        document.getElementById('rm-title').value = row.title;
+        document.getElementById('rm-desc').value = row.description;
+        document.getElementById('rm-date').value = localDate;
+        document.getElementById('rm-time').value = localTime;
+        document.getElementById('rm-repeat').value = row.repeat_type;
+
+        reminderModal.classList.add('active');
+    };
 
     // ---- Global Actions for Buttons generated in HTML string ----
     window.deleteTransaction = async (id) => {
@@ -1084,6 +1218,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>
                         <!-- Read-only view, delete could be added later if needed -->
                         <span class="text-muted" style="font-size: 13px;">N/A</span>
+                    </td>
+                `;
+            } else if (currentPage === 'reminders') {
+                const remindAtLocal = new Date(row.remind_at).toLocaleString('en-GB', {
+                    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                });
+
+                const repBadge = row.repeat_type !== 'none' ? `<span class="badge badge-secondary" style="background:#e0e7ff; color:#4f46e5;"><i class="fa-solid fa-rotate"></i> ${row.repeat_type}</span>` : '<span class="text-muted">-</span>';
+                const statusBadge = row.is_completed ? '<span class="badge badge-success">Completed</span>' : '<span class="badge badge-warning">Pending</span>';
+
+                tr.innerHTML = `
+                    <td><strong>${row.title}</strong></td>
+                    <td><span class="text-muted" style="font-size: 0.9em; display: inline-block; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${row.description || ''}">${row.description || '-'}</span></td>
+                    <td>${remindAtLocal}</td>
+                    <td>${repBadge}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <button class="action-btn edit" onclick="editReminder(${row.id})" title="Edit">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button class="action-btn delete" onclick="deleteReminder(${row.id})" title="Delete">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
                     </td>
                 `;
             } else {
