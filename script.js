@@ -1348,6 +1348,114 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ---- Reminder Notification Engine ----
+    let reminderPoller = null;
+    let notifiedIds = new Set(); // Prevent spamming same reminder 
+
+    async function checkReminders() {
+        if (!authToken) return;
+        try {
+            const res = await fetch(`${API_BASE}/reminders`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (!res.ok) return;
+            const allReminders = await res.json();
+
+            const now = new Date();
+
+            for (const r of allReminders) {
+                if (r.is_completed) continue;
+
+                const remindTime = new Date(r.remind_at);
+
+                // If it's time (within the last 2 minutes to be safe) AND we haven't notified yet
+                const diffMs = now - remindTime;
+                if (diffMs >= 0 && diffMs <= 120000 && !notifiedIds.has(r.id)) {
+                    notifiedIds.add(r.id);
+                    triggerNativeNotification(r.title, r.description);
+                    await handleReminderCompletion(r);
+                } else if (diffMs > 120000 && !notifiedIds.has(r.id)) {
+                    // It's way past overdue and we missed it (e.g. app was closed).
+                    // We could notify them "Missed reminder", but let's just mark it complete/repeat
+                    notifiedIds.add(r.id);
+                    await handleReminderCompletion(r);
+                }
+            }
+        } catch (err) {
+            console.error("Error polling reminders:", err);
+        }
+    }
+
+    async function handleReminderCompletion(reminder) {
+        let payload = { ...reminder, is_completed: true };
+
+        // Handle repeats
+        if (reminder.repeat_type !== 'none') {
+            const nextDate = new Date(reminder.remind_at);
+            if (reminder.repeat_type === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+            if (reminder.repeat_type === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+            if (reminder.repeat_type === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+
+            // Keep the format MySQL likes for DATETIME: YYYY-MM-DD HH:MM:SS
+            const localDateStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')} ${String(nextDate.getHours()).padStart(2, '0')}:${String(nextDate.getMinutes()).padStart(2, '0')}:00`;
+
+            payload.remind_at = localDateStr;
+            // keep it incomplete for the next cycle
+            payload.is_completed = false;
+            notifiedIds.delete(reminder.id);
+        }
+
+        try {
+            // Update DB
+            const res = await fetch(`${API_BASE}/reminders/${reminder.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify(payload)
+            });
+            // Auto refresh if they are on the reminders page
+            if (res.ok && currentPage === 'reminders') {
+                fetchTransactions();
+            }
+        } catch (e) {
+            console.error("Failed to update completed reminder", e);
+        }
+    }
+
+    function triggerNativeNotification(title, body) {
+        if (!("Notification" in window)) return;
+
+        if (Notification.permission === "granted") {
+            new Notification(title, { body: body, icon: 'https://ui-avatars.com/api/?name=Reminder&background=10b981&color=fff' });
+        } else if (Notification.permission !== "denied") {
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    new Notification(title, { body: body });
+                }
+            });
+        }
+    }
+
+    window.scheduleNotifications = () => {
+        // Ask permission immediately
+        if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission();
+        }
+
+        if (reminderPoller) clearInterval(reminderPoller);
+        // Check immediately
+        checkReminders();
+        // Then poll every minute
+        reminderPoller = setInterval(checkReminders, 60000);
+    };
+
     // Call render on first load if authenticated
     checkAuth();
+
+    // Start polling if already logged in (re-load)
+    if (authToken) {
+        window.scheduleNotifications();
+    }
 });
