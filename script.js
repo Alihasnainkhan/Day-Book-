@@ -896,7 +896,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const rmDate = document.getElementById('khata-rm-date');
                     const rmTime = document.getElementById('khata-rm-time');
                     if (rmDate && rmTime && rmDate.value && rmTime.value) {
-                        const remind_at = `${rmDate.value} ${rmTime.value}:00`;
+                        const localDt = new Date(`${rmDate.value}T${rmTime.value}:00`);
+                        const remind_at = localDt.toISOString().slice(0, 19).replace('T', ' ');
                         const clientName = entryForm.querySelectorAll('input, select')[1].value;
                         const typeInput = entryForm.querySelectorAll('input, select')[2].value;
                         const amtInput = entryForm.querySelectorAll('input, select')[3].value;
@@ -984,8 +985,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const time = document.getElementById('rm-time').value;
             const repeat = document.getElementById('rm-repeat').value;
 
-            // Combine date and time
-            const remind_at = `${date} ${time}:00`;
+            // Combine date and time, then convert to UTC for MySQL
+            const localDt = new Date(`${date}T${time}:00`);
+            const remind_at = localDt.toISOString().slice(0, 19).replace('T', ' ');
 
             const payload = { title, description: desc, remind_at, repeat_type: repeat, is_completed: false };
 
@@ -1438,10 +1440,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (reminder.repeat_type === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
             if (reminder.repeat_type === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
 
-            // Keep the format MySQL likes for DATETIME: YYYY-MM-DD HH:MM:SS
-            const localDateStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')} ${String(nextDate.getHours()).padStart(2, '0')}:${String(nextDate.getMinutes()).padStart(2, '0')}:00`;
+            // Convert nextDate to UTC string for MySQL
+            const nextUtcStr = nextDate.toISOString().slice(0, 19).replace('T', ' ');
 
-            payload.remind_at = localDateStr;
+            payload.remind_at = nextUtcStr;
             // keep it incomplete for the next cycle
             payload.is_completed = false;
             notifiedIds.delete(reminder.id);
