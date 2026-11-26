@@ -1,5 +1,6 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
+const { Pool: PgPool } = require('pg');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -19,6 +20,24 @@ app.get('/', (req, res) => {
 });
 
 // Database Connection Setup
+const pgUrlRaw = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
+const isPostgres = Boolean(pgUrlRaw);
+
+function buildPgConnectionString(rawUrl) {
+    try {
+        const u = new URL(rawUrl);
+        u.searchParams.delete('sslmode');
+        return u.toString();
+    } catch {
+        return rawUrl;
+    }
+}
+
+function convertPlaceholders(sql) {
+    let idx = 0;
+    return sql.replace(/\?/g, () => `$${++idx}`);
+}
+
 const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
@@ -34,7 +53,34 @@ if (process.env.DB_SSL === 'true') {
     dbConfig.ssl = { rejectUnauthorized: false };
 }
 
-let pool = mysql.createPool(dbConfig);
+let pool;
+if (isPostgres) {
+    const pgPool = new PgPool({
+        connectionString: buildPgConnectionString(pgUrlRaw),
+        ssl: { rejectUnauthorized: false },
+        max: 10
+    });
+    pool = {
+        async query(sql, params = []) {
+            let pgSql = convertPlaceholders(sql.trim());
+            const isInsert = /^INSERT\s+INTO/i.test(pgSql);
+            if (isInsert && !/\bRETURNING\b/i.test(pgSql)) {
+                pgSql += ' RETURNING id';
+            }
+            const res = await pgPool.query(pgSql, params);
+            if (/^SELECT/i.test(pgSql)) {
+                return [res.rows];
+            }
+            return [{
+                insertId: res.rows && res.rows[0] ? res.rows[0].id : undefined,
+                affectedRows: res.rowCount || 0
+            }];
+        }
+    };
+} else {
+    pool = mysql.createPool(dbConfig);
+}
+
 let dbInitPromise = null;
 
 async function ensureColumn(tableName, columnName, columnDefinition) {
@@ -49,7 +95,87 @@ async function ensureColumn(tableName, columnName, columnDefinition) {
 }
 
 async function initDB() {
-    // First ensure DB exists using a fresh connection w/o database selected
+    if (isPostgres) {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) NOT NULL UNIQUE,
+                password VARCHAR(255) NOT NULL,
+                role VARCHAR(10) DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        const adminUsername = 'admin';
+        const adminPassword = 'Ali1214@';
+        const [existingAdmin] = await pool.query('SELECT * FROM users WHERE username = ?', [adminUsername]);
+        if (existingAdmin.length === 0) {
+            await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [adminUsername, adminPassword, 'admin']);
+            console.log("Master Admin account created (PostgreSQL).");
+        } else {
+            await pool.query('UPDATE users SET password = ?, role = ? WHERE username = ?', [adminPassword, 'admin', adminUsername]);
+            console.log("Master Admin account verified (PostgreSQL).");
+        }
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS transactions (
+                id SERIAL PRIMARY KEY,
+                user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                details VARCHAR(255) NOT NULL,
+                category VARCHAR(100) NOT NULL,
+                type VARCHAR(20) NOT NULL CHECK (type IN ('incoming', 'outgoing')),
+                amount DECIMAL(15, 2) NOT NULL,
+                date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS inventory (
+                id SERIAL PRIMARY KEY,
+                user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                product_name VARCHAR(255) NOT NULL,
+                category VARCHAR(100) NOT NULL,
+                stock_in INT DEFAULT 0,
+                stock_out INT DEFAULT 0,
+                unit VARCHAR(20) DEFAULT 'kg',
+                price DECIMAL(15, 2) DEFAULT 0.00,
+                date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS khata (
+                id SERIAL PRIMARY KEY,
+                user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                client_name VARCHAR(255) NOT NULL,
+                notes TEXT,
+                debit DECIMAL(15, 2) DEFAULT 0.00,
+                credit DECIMAL(15, 2) DEFAULT 0.00,
+                date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS reminders (
+                id SERIAL PRIMARY KEY,
+                user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                remind_at TIMESTAMP NOT NULL,
+                repeat_type VARCHAR(20) DEFAULT 'none' CHECK (repeat_type IN ('none', 'daily', 'weekly', 'monthly')),
+                is_completed BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        console.log("PostgreSQL tables ready.");
+        return;
+    }
+
+    // MySQL: First ensure DB exists using a fresh connection w/o database selected
     const initialConfig = {
         host: dbConfig.host,
         user: dbConfig.user,
@@ -194,7 +320,7 @@ app.use('/api', async (req, res, next) => {
 app.get('/api/health', async (req, res) => {
     try {
         await pool.query('SELECT 1');
-        res.json({ status: 'ok', database: dbConfig.database });
+        res.json({ status: 'ok', engine: isPostgres ? 'postgres' : 'mysql', database: isPostgres ? 'defaultdb' : dbConfig.database });
     } catch (error) {
         res.status(500).json({ status: 'error', error: error.message });
     }
@@ -681,7 +807,7 @@ app.put('/api/reminders/:id', verifyToken, async (req, res) => {
             WHERE id=? AND user_id=?
         `;
         const [result] = await pool.query(query, [
-            title, description || '', remind_at, repeat_type || 'none', is_completed ? 1 : 0, id, req.user.id
+            title, description || '', remind_at, repeat_type || 'none', Boolean(is_completed), id, req.user.id
         ]);
 
         if (result.affectedRows === 0) {
