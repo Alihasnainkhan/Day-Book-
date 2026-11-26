@@ -211,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ---- API Logic & Fetch ----
     const origin = window.location.origin;
-    const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:' || !window.location.hostname)
         ? 'http://localhost:5000/api'
         : `${origin}/api`;
 
@@ -302,6 +302,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                 });
                 const data = await response.json();
+
+                if (!response.ok) throw new Error(data.error || 'Signup failed');
 
                 // We only automatically log in if we weren't already logged in
                 // (i.e. if Ali is admin creating a user, he shouldn't be suddenly logged out of his admin account)

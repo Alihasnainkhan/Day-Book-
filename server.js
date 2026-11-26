@@ -19,147 +19,200 @@ app.get('/', (req, res) => {
 });
 
 // Database Connection Setup
-// Database Connection Setup
-let pool = mysql.createPool({
-    host: 'mysql-3ebda4f-ah9742400-21d2.j.aivencloud.com',
-    user: 'avnadmin',
-    password: process.env.DB_PASSWORD || Buffer.from('QVZOU19PazJ4QjR2ZUdLeVNVYWdkOEo0', 'base64').toString('utf-8'),
-    database: 'defaultdb',
-    port: process.env.DB_PORT || 10784,
-    ssl: { rejectUnauthorized: false },
+const dbConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : '',
+    database: process.env.DB_NAME || 'khantraders_jauwana',
+    port: Number(process.env.DB_PORT) || 3306,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
-});
+};
 
-async function initDB() {
-    try {
-        // First ensure DB exists using a fresh connection w/o database selected
-        const initialConnection = await mysql.createConnection({
-            host: 'mysql-3ebda4f-ah9742400-21d2.j.aivencloud.com',
-            user: 'avnadmin',
-            password: process.env.DB_PASSWORD || Buffer.from('QVZOU19PazJ4QjR2ZUdLeVNVYWdkOEo0', 'base64').toString('utf-8'),
-            port: process.env.DB_PORT || 10784,
-            ssl: { rejectUnauthorized: false }
-        });
-        const dbName = 'defaultdb';
-        await initialConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`);
-        await initialConnection.end();
+if (process.env.DB_SSL === 'true') {
+    dbConfig.ssl = { rejectUnauthorized: false };
+}
 
-        console.log(`Connected to MySQL database: ${dbName}`);
+let pool = mysql.createPool(dbConfig);
+let dbInitPromise = null;
 
-        // Create users table for authentication
-        const createUsersQuery = `
-            CREATE TABLE IF NOT EXISTS users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                username VARCHAR(50) NOT NULL UNIQUE,
-                password VARCHAR(255) NOT NULL,
-                role ENUM('admin', 'user') DEFAULT 'user',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `;
-        await pool.query(createUsersQuery);
-        console.log("Users table ready.");
-
-        // Create transactions table if it doesn't exist
-        const createTransactionsQuery = `
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                details VARCHAR(255) NOT NULL,
-                category VARCHAR(100) NOT NULL,
-                type ENUM('incoming', 'outgoing') NOT NULL,
-                amount DECIMAL(15, 2) NOT NULL,
-                date DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-        `;
-        await pool.query(createTransactionsQuery);
-        console.log("Transactions table ready.");
-
-        // Create inventory table if it doesn't exist
-        const createInventoryQuery = `
-            CREATE TABLE IF NOT EXISTS inventory (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                product_name VARCHAR(255) NOT NULL,
-                category VARCHAR(100) NOT NULL,
-                stock_in INT DEFAULT 0,
-                stock_out INT DEFAULT 0,
-                unit VARCHAR(20) DEFAULT 'kg',
-                price DECIMAL(15, 2) DEFAULT 0.00,
-                date DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-        `;
-        await pool.query(createInventoryQuery);
-        console.log("Inventory table ready.");
-
-        // Create khata table if it doesn't exist
-        const createKhataQuery = `
-            CREATE TABLE IF NOT EXISTS khata (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                client_name VARCHAR(255) NOT NULL,
-                notes TEXT,
-                debit DECIMAL(15, 2) DEFAULT 0.00,
-                credit DECIMAL(15, 2) DEFAULT 0.00,
-                date DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-        `;
-        await pool.query(createKhataQuery);
-        console.log("Khata table ready.");
-
-        // Create reminders table
-        const createRemindersQuery = `
-            CREATE TABLE IF NOT EXISTS reminders (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                remind_at DATETIME NOT NULL,
-                repeat_type ENUM('none', 'daily', 'weekly', 'monthly') DEFAULT 'none',
-                is_completed BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-        `;
-        await pool.query(createRemindersQuery);
-        console.log("Reminders table ready.");
-
-        // Ensure the Master Admin account exists
-        const adminUsername = 'admin';
-        const adminPassword = 'Ali1214@'; // Requested plain text password for admin
-        const [existingAdmin] = await pool.query('SELECT * FROM users WHERE username = ?', [adminUsername]);
-
-        if (existingAdmin.length === 0) {
-            await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [adminUsername, adminPassword, 'admin']);
-            console.log("Master Admin account created.");
-        } else {
-            // Force reset the admin password to standard just in case
-            await pool.query('UPDATE users SET password = ?, role = ? WHERE username = ?', [adminPassword, 'admin', adminUsername]);
-            console.log("Master Admin account verified.");
-        }
-
-    } catch (error) {
-        console.error("Database connection error:", error);
+async function ensureColumn(tableName, columnName, columnDefinition) {
+    const [cols] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+        [dbConfig.database, tableName, columnName]
+    );
+    if (cols.length === 0) {
+        await pool.query(`ALTER TABLE \`${tableName}\` ADD COLUMN ${columnDefinition}`);
+        console.log(`Added missing column '${columnName}' to '${tableName}'.`);
     }
 }
+
+async function initDB() {
+    // First ensure DB exists using a fresh connection w/o database selected
+    const initialConfig = {
+        host: dbConfig.host,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        port: dbConfig.port
+    };
+    if (dbConfig.ssl) initialConfig.ssl = dbConfig.ssl;
+
+    const initialConnection = await mysql.createConnection(initialConfig);
+    const dbName = dbConfig.database;
+    await initialConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`);
+    await initialConnection.end();
+
+    console.log(`Connected to MySQL database: ${dbName}`);
+
+    // Create users table for authentication
+    const createUsersQuery = `
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            role ENUM('admin', 'user') DEFAULT 'user',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `;
+    await pool.query(createUsersQuery);
+    console.log("Users table ready.");
+
+    // Ensure the Master Admin account exists before migrating legacy rows
+    const adminUsername = 'admin';
+    const adminPassword = 'Ali1214@'; // Requested plain text password for admin
+    const [existingAdmin] = await pool.query('SELECT * FROM users WHERE username = ?', [adminUsername]);
+
+    let adminId;
+    if (existingAdmin.length === 0) {
+        const [adminInsert] = await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [adminUsername, adminPassword, 'admin']);
+        adminId = adminInsert.insertId;
+        console.log("Master Admin account created.");
+    } else {
+        adminId = existingAdmin[0].id;
+        await pool.query('UPDATE users SET password = ?, role = ? WHERE username = ?', [adminPassword, 'admin', adminUsername]);
+        console.log("Master Admin account verified.");
+    }
+
+    // Create transactions table if it doesn't exist
+    const createTransactionsQuery = `
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            details VARCHAR(255) NOT NULL,
+            category VARCHAR(100) NOT NULL,
+            type ENUM('incoming', 'outgoing') NOT NULL,
+            amount DECIMAL(15, 2) NOT NULL,
+            date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `;
+    await pool.query(createTransactionsQuery);
+    await ensureColumn('transactions', 'user_id', `user_id INT NOT NULL DEFAULT ${adminId}`);
+    console.log("Transactions table ready.");
+
+    // Create inventory table if it doesn't exist
+    const createInventoryQuery = `
+        CREATE TABLE IF NOT EXISTS inventory (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            product_name VARCHAR(255) NOT NULL,
+            category VARCHAR(100) NOT NULL,
+            stock_in INT DEFAULT 0,
+            stock_out INT DEFAULT 0,
+            unit VARCHAR(20) DEFAULT 'kg',
+            price DECIMAL(15, 2) DEFAULT 0.00,
+            date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `;
+    await pool.query(createInventoryQuery);
+    await ensureColumn('inventory', 'user_id', `user_id INT NOT NULL DEFAULT ${adminId}`);
+    await ensureColumn('inventory', 'unit', `unit VARCHAR(20) DEFAULT 'kg'`);
+    await ensureColumn('inventory', 'price', `price DECIMAL(15, 2) DEFAULT 0.00`);
+    console.log("Inventory table ready.");
+
+    // Create khata table if it doesn't exist
+    const createKhataQuery = `
+        CREATE TABLE IF NOT EXISTS khata (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            client_name VARCHAR(255) NOT NULL,
+            notes TEXT,
+            debit DECIMAL(15, 2) DEFAULT 0.00,
+            credit DECIMAL(15, 2) DEFAULT 0.00,
+            date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `;
+    await pool.query(createKhataQuery);
+    await ensureColumn('khata', 'user_id', `user_id INT NOT NULL DEFAULT ${adminId}`);
+    console.log("Khata table ready.");
+
+    // Create reminders table
+    const createRemindersQuery = `
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            remind_at DATETIME NOT NULL,
+            repeat_type ENUM('none', 'daily', 'weekly', 'monthly') DEFAULT 'none',
+            is_completed BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `;
+    await pool.query(createRemindersQuery);
+    console.log("Reminders table ready.");
+}
+
+function ensureDBInitialized() {
+    if (!dbInitPromise) {
+        dbInitPromise = initDB().catch((error) => {
+            dbInitPromise = null;
+            console.error("Database initialization error:", error);
+            throw error;
+        });
+    }
+    return dbInitPromise;
+}
+
+// Ensure DB is initialized for all API requests (including serverless environments)
+app.use('/api', async (req, res, next) => {
+    try {
+        await ensureDBInitialized();
+        next();
+    } catch (error) {
+        res.status(500).json({ error: 'Database connection failed', details: error.message });
+    }
+});
+
+app.get('/api/health', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        res.json({ status: 'ok', database: dbConfig.database });
+    } catch (error) {
+        res.status(500).json({ status: 'error', error: error.message });
+    }
+});
 
 // Export the Express API for Vercel
 module.exports = app;
 
 if (require.main === module) {
     // Only run the listen command if executed locally
-    initDB().then(() => {
+    ensureDBInitialized().then(() => {
         const PORT = process.env.PORT || 5000;
         app.listen(PORT, () => {
             console.log(`Server running locally on port ${PORT}`);
         });
+    }).catch((err) => {
+        console.error("Failed to start server due to database error:", err.message);
+        process.exit(1);
     });
 }
 
@@ -246,7 +299,12 @@ app.post('/api/change-password', verifyToken, async (req, res) => {
         if (users.length === 0) return res.status(404).json({ error: 'User not found' });
 
         const user = users[0];
-        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        let isMatch = false;
+        if (currentPassword === user.password) {
+            isMatch = true;
+        } else {
+            isMatch = await bcrypt.compare(currentPassword, user.password).catch(() => false);
+        }
 
         if (!isMatch) {
             return res.status(401).json({ error: 'Incorrect current password' });
